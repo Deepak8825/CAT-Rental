@@ -11,7 +11,7 @@ from datetime import datetime, date, timedelta
 from app.core.database import get_db
 from app.models.models import (
     Equipment, Rental, Customer, DailyLog, SensorReading, 
-    Event, MaintenanceRecord, Feedback, RentalStatus, EquipmentStatus
+    Event, MaintenanceRecord, Feedback, RentalStatus, EquipmentStatus, Dealer
 )
 from app.models.schemas import (
     DemandForecast, PricingRecommendation, JobFitRecommendation,
@@ -22,73 +22,119 @@ router = APIRouter(prefix="/analytics", tags=["Analytics & AI"])
 
 
 @router.get("/dashboard")
-async def admin_dashboard(db: AsyncSession = Depends(get_db)):
-    """Comprehensive admin dashboard data."""
+async def admin_dashboard(
+    category: Optional[str] = Query(None),
+    region: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Comprehensive admin dashboard data filtered dynamically by category and region."""
     today = date.today()
     this_month = today.replace(day=1)
     last_month = (this_month - timedelta(days=1)).replace(day=1)
     
-    # Equipment stats
-    equip_total = await db.execute(select(func.count(Equipment.id)))
-    equip_available = await db.execute(
-        select(func.count(Equipment.id)).where(Equipment.status == EquipmentStatus.AVAILABLE)
-    )
+    # 1. Base Equipment Query & Filters
+    equip_q = select(Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id)
+    if category:
+        equip_q = equip_q.where(Equipment.category == category)
+    if region:
+        equip_q = equip_q.where(Dealer.region == region)
+
+    equip_total = await db.execute(select(func.count()).select_from(equip_q.subquery()))
     
-    # Rental stats
-    active_rentals = await db.execute(
-        select(func.count(Rental.id)).where(Rental.status == RentalStatus.ACTIVE)
+    equip_avail_q = select(Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id).where(Equipment.status == EquipmentStatus.AVAILABLE)
+    if category:
+        equip_avail_q = equip_avail_q.where(Equipment.category == category)
+    if region:
+        equip_avail_q = equip_avail_q.where(Dealer.region == region)
+    equip_available = await db.execute(select(func.count()).select_from(equip_avail_q.subquery()))
+
+    # 2. Active Rentals Query
+    active_q = select(Rental.id).join(Equipment, Rental.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id).where(Rental.status == RentalStatus.ACTIVE)
+    if category:
+        active_q = active_q.where(Equipment.category == category)
+    if region:
+        active_q = active_q.where(Dealer.region == region)
+    active_rentals = await db.execute(select(func.count()).select_from(active_q.subquery()))
+
+    # 3. Customer Stats Query
+    cust_q = select(Rental.customer_id).join(Equipment, Rental.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id)
+    if category:
+        cust_q = cust_q.where(Equipment.category == category)
+    if region:
+        cust_q = cust_q.where(Dealer.region == region)
+    total_customers = await db.execute(select(func.count(func.distinct(cust_q.subquery().c.customer_id))))
+
+    # 4. Revenue Query
+    rev_this_q = select(func.coalesce(func.sum(Rental.total_cost), 0)).join(Equipment, Rental.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id).where(
+        and_(Rental.start_date >= this_month, Rental.status != RentalStatus.CANCELLED)
     )
-    
-    # Customer stats
-    total_customers = await db.execute(select(func.count(Customer.id)))
-    
-    # Revenue
-    rev_this = await db.execute(
-        select(func.coalesce(func.sum(Rental.total_cost), 0)).where(
-            and_(Rental.start_date >= this_month, Rental.status != RentalStatus.CANCELLED)
-        )
+    if category:
+        rev_this_q = rev_this_q.where(Equipment.category == category)
+    if region:
+        rev_this_q = rev_this_q.where(Dealer.region == region)
+    rev_this = await db.execute(rev_this_q)
+
+    rev_last_q = select(func.coalesce(func.sum(Rental.total_cost), 0)).join(Equipment, Rental.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id).where(
+        and_(Rental.start_date >= last_month, Rental.start_date < this_month, Rental.status != RentalStatus.CANCELLED)
     )
-    rev_last = await db.execute(
-        select(func.coalesce(func.sum(Rental.total_cost), 0)).where(
-            and_(Rental.start_date >= last_month, Rental.start_date < this_month,
-                 Rental.status != RentalStatus.CANCELLED)
-        )
-    )
-    
+    if category:
+        rev_last_q = rev_last_q.where(Equipment.category == category)
+    if region:
+        rev_last_q = rev_last_q.where(Dealer.region == region)
+    rev_last = await db.execute(rev_last_q)
+
     rev_this_val = float(rev_this.scalar() or 0)
     rev_last_val = float(rev_last.scalar() or 0)
     rev_change = ((rev_this_val - rev_last_val) / max(rev_last_val, 1)) * 100
-    
-    # Average utilization (from daily logs)
-    util = await db.execute(
-        select(
-            func.avg(DailyLog.operating_hours / 
-                     func.nullif(DailyLog.operating_hours + DailyLog.idle_hours, 0) * 100)
-        )
+
+    # 5. Utilization Query
+    util_q = select(
+        func.avg(DailyLog.operating_hours / func.nullif(DailyLog.operating_hours + DailyLog.idle_hours, 0) * 100)
+    ).join(Equipment, DailyLog.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id)
+    if category:
+        util_q = util_q.where(Equipment.category == category)
+    if region:
+        util_q = util_q.where(Dealer.region == region)
+    util = await db.execute(util_q)
+
+    # 6. Pending Maintenance Query
+    maint_q = select(func.count(MaintenanceRecord.id)).join(Equipment, MaintenanceRecord.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id).where(
+        MaintenanceRecord.is_completed == False
     )
-    
-    # Pending maintenance
-    pending_maint = await db.execute(
-        select(func.count(MaintenanceRecord.id)).where(
-            MaintenanceRecord.is_completed == False
-        )
+    if category:
+        maint_q = maint_q.where(Equipment.category == category)
+    if region:
+        maint_q = maint_q.where(Dealer.region == region)
+    pending_maint = await db.execute(maint_q)
+
+    # 7. Active Alerts Query
+    alerts_q = select(func.count(Event.id)).join(Equipment, Event.equipment_id == Equipment.id, isouter=True).join(Dealer, Equipment.dealer_id == Dealer.id, isouter=True).where(
+        Event.is_acknowledged == False
     )
-    
-    # Active alerts
-    active_alerts = await db.execute(
-        select(func.count(Event.id)).where(Event.is_acknowledged == False)
-    )
-    
-    # Top categories
+    if category:
+        alerts_q = alerts_q.where(Equipment.category == category)
+    if region:
+        alerts_q = alerts_q.where(Dealer.region == region)
+    active_alerts = await db.execute(alerts_q)
+
+    # 8. Top Categories (filtered by region if selected)
     cat_query = select(
         Equipment.category,
         func.count(Equipment.id).label("count"),
         func.avg(Equipment.health_score).label("avg_health"),
-    ).group_by(Equipment.category).order_by(func.count(Equipment.id).desc()).limit(5)
+    ).join(Dealer, Equipment.dealer_id == Dealer.id)
+    if region:
+        cat_query = cat_query.where(Dealer.region == region)
+    cat_query = cat_query.group_by(Equipment.category).order_by(func.count(Equipment.id).desc()).limit(5)
     cat_result = await db.execute(cat_query)
-    
-    # Recent events
-    events_query = select(Event).order_by(Event.event_time.desc()).limit(10)
+
+    # 9. Recent Events (filtered by category and region)
+    events_query = select(Event).join(Equipment, Event.equipment_id == Equipment.id, isouter=True).join(Dealer, Equipment.dealer_id == Dealer.id, isouter=True)
+    if category:
+        events_query = events_query.where(Equipment.category == category)
+    if region:
+        events_query = events_query.where(Dealer.region == region)
+    events_query = events_query.order_by(Event.event_time.desc()).limit(10)
     events_result = await db.execute(events_query)
     recent_events = [
         {
@@ -100,7 +146,7 @@ async def admin_dashboard(db: AsyncSession = Depends(get_db)):
         }
         for e in events_result.scalars().all()
     ]
-    
+
     return {
         "total_equipment": equip_total.scalar() or 0,
         "available_equipment": equip_available.scalar() or 0,
@@ -117,6 +163,8 @@ async def admin_dashboard(db: AsyncSession = Depends(get_db)):
             for row in cat_result.all()
         ],
         "recent_events": recent_events,
+        "filter_category": category,
+        "filter_region": region,
     }
 
 

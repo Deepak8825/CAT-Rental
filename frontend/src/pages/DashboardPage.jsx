@@ -485,11 +485,15 @@ export default function DashboardPage({ category, setCategory, region, setRegion
   const [liveData, setLiveData] = useState(null)
 
   useEffect(() => {
-    fetch(`${API}/analytics/dashboard`)
+    const params = new URLSearchParams()
+    if (category) params.append('category', category)
+    if (region) params.append('region', region)
+
+    fetch(`${API}/analytics/dashboard?${params.toString()}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setLiveData(d) })
       .catch(() => {})
-  }, [])
+  }, [category, region])
 
   return (
     <div className="page-content">

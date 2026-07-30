@@ -163,6 +163,7 @@ class Equipment(Base):
         Index("ix_equipment_status", "status"),
         Index("ix_equipment_category", "category"),
         Index("ix_equipment_dealer", "dealer_id"),
+        Index("ix_equipment_cat_dealer", "category", "dealer_id"),
     )
 
 
