@@ -1,0 +1,11 @@
+id,name,region,address,latitude,longitude,phone,email,is_active,created_at
+6df896d4-0bf0-427a-bb13-fd7605254905,Lewis LLC Equipment Rentals,North,"397 Diane Station
+Elizabethshire, WV 01799",17.992642,87.260715,746.754.3328x44477,bbennett@williams.net,True,2024-05-07T10:52:57
+435422c3-08e5-4ecd-b663-9e664da0afaa,Cole-Stone Equipment Rentals,South,"5448 Zachary Keys Apt. 491
+Lake Denise, AL 94628",23.711903,81.979877,001-266-791-7512x3038,mitchellgregory@larsen.com,True,2024-07-04T17:51:14
+6eedfe80-e252-41dc-b1b8-39024620b180,"Vazquez, Johnson and Freeman Equipment Rentals",East,"Unit 4580 Box 7316
+DPO AP 85255",14.496298,75.339918,(567)602-9500x838,osmith@johnson-scott.com,True,2024-02-02T15:47:30
+bd3c8cdc-1cdf-4941-9911-3baa9ca8e01d,Pierce and Sons Equipment Rentals,West,"8327 Wayne Oval Apt. 997
+Davidborough, PA 20327",12.929338,85.992642,711.510.3633x35206,chrisparker@wilson.com,True,2024-02-11T10:01:45
+8a0a9a5b-97fe-47c2-b856-40dfcd3620a9,Norman-Franklin Equipment Rentals,Central,"66388 Christopher Radial
+Shawnport, OK 46396",21.61784,83.621089,621.898.9137,johnny93@calderon.com,True,2024-02-19T12:39:26

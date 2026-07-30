@@ -1,0 +1,41 @@
+id,dealer_id,name,address,city,state,latitude,longitude,site_type,is_active,created_at
+ca385e25-60e9-4fcd-8c5d-02ad6a78d891,6df896d4-0bf0-427a-bb13-fd7605254905,Andrewtown Residential Site,"46489 Sherry Mountain Apt. 336
+Yolandabury, ND 73133",Latoyamouth,Washington,16.9942,88.245138,Construction,False,2025-05-01T16:27:57
+6b202a66-258d-4f6c-b283-4197c2de2a1f,8a0a9a5b-97fe-47c2-b856-40dfcd3620a9,North Phillip Demolition Site,"17455 Cook Bridge
+North Linda, MP 74376",New Shaneport,Georgia,20.631973,82.667214,Mining,True,2025-05-07T06:35:41
+4ad60986-1a7f-437e-8dae-9e430f78d12e,6df896d4-0bf0-427a-bb13-fd7605254905,New Brendachester Residential Site,"6024 Megan Shores Suite 903
+Karabury, NV 47388",Aprilbury,Maine,17.085973,88.208226,Construction,True,2025-01-28T23:56:26
+18e4f8de-b43c-4e3a-a59b-67a0e05c44ba,6df896d4-0bf0-427a-bb13-fd7605254905,Amandaberg Infrastructure Site,"683 Steven Parkway Apt. 736
+North Jennaside, TN 80613",New Stephanie,Michigan,18.177471,86.353616,Construction,True,2025-09-17T01:31:12
+22c34c91-27dc-476d-a886-e057e6eeee26,435422c3-08e5-4ecd-b663-9e664da0afaa,Port Jacob Construction Site,"7513 Robert Stream Apt. 738
+Ramirezland, PR 99687",Toddside,California,22.842006,82.877648,Construction,False,2026-05-11T02:26:37
+9204067a-2c25-4cd7-8f3d-677dce9b85ec,6df896d4-0bf0-427a-bb13-fd7605254905,Port Karen Mining Site,"960 Jessica Loop Apt. 114
+Lake Jennifer, MH 90074",Bartlettport,Arizona,17.60187,86.456059,Infrastructure,True,2026-04-18T21:44:35
+202284e9-6b1e-482c-9bc4-dbfd429ea13d,6df896d4-0bf0-427a-bb13-fd7605254905,South Joannetown Infrastructure Site,"64402 Brandon Meadows Apt. 086
+Jonesbury, PA 66481",Port Christina,Georgia,17.236718,87.251069,Mining,True,2026-01-13T15:36:11
+28b34ddd-1ba6-44ed-b94f-a55e31bb89f4,8a0a9a5b-97fe-47c2-b856-40dfcd3620a9,New Williamside Residential Site,"4187 Barnes Meadow Suite 418
+Jamesmouth, UT 87695",Lake Brenda,Tennessee,20.982312,84.131812,Infrastructure,True,2026-04-20T02:49:21
+5b0b32e2-808a-4b8e-8b76-50566911c4f5,6eedfe80-e252-41dc-b1b8-39024620b180,Lake Susan Road Work Site,"250 Wilson Hill Apt. 333
+East Williamland, FL 19645",East Justin,Alaska,15.435467,75.890184,Infrastructure,True,2025-02-17T18:48:55
+7b1ae744-a4ad-47c1-8b73-657133cf0956,6df896d4-0bf0-427a-bb13-fd7605254905,Port Normanfurt Construction Site,"72563 Decker Gardens Suite 121
+Millerbury, NY 88677",Lake Joannland,Louisiana,18.188442,88.104463,Mining,True,2025-02-23T05:22:21
+5791500c-c684-4c24-a8de-874e8d0411bb,8a0a9a5b-97fe-47c2-b856-40dfcd3620a9,Lake Lindsay Demolition Site,"9687 Paula Alley Apt. 771
+Port John, AL 05204",Lake Luke,Nebraska,22.306908,84.115729,Demolition,True,2025-04-20T02:04:54
+80a089f9-b24d-40e6-8cd5-c8305e194086,6eedfe80-e252-41dc-b1b8-39024620b180,North Stephanieport Demolition Site,"701 Porter Rapid
+Walkertown, MI 92979",West Eric,Virginia,14.058167,75.42531,Construction,False,2026-01-23T04:05:21
+8832ba77-287a-46a8-bc40-c1192f6e5a06,435422c3-08e5-4ecd-b663-9e664da0afaa,Ashleyview Construction Site,"591 George Coves Apt. 779
+New Richard, TX 90702",Farmerville,Nevada,22.861004,82.953651,Demolition,True,2025-11-04T01:49:58
+12f5e931-0a8f-4acb-80b5-90d9b62c5d6e,435422c3-08e5-4ecd-b663-9e664da0afaa,South Danielstad Infrastructure Site,"PSC 8722, Box 4085
+APO AA 22884",Port Deanfurt,Alaska,23.109588,82.402561,Demolition,True,2025-07-19T14:15:25
+b6fa1d3c-0d86-4f47-a50b-b2f0a436dea4,435422c3-08e5-4ecd-b663-9e664da0afaa,East Paulfort Residential Site,"51260 Wood Ways
+New Zacharychester, WV 87959",New Benjaminville,South Dakota,24.564505,82.282031,Road Work,True,2025-02-25T15:47:59
+f11a421c-db91-4007-8cd5-1a6be6d5d99c,8a0a9a5b-97fe-47c2-b856-40dfcd3620a9,East Jessica Road Work Site,"767 Marshall Highway Apt. 921
+South Thomas, KS 94437",Dawnport,Nebraska,21.516741,82.811909,Construction,True,2025-11-04T01:07:03
+eb1d9d37-6b47-45c2-9c56-b65d9325975c,bd3c8cdc-1cdf-4941-9911-3baa9ca8e01d,Diazville Residential Site,"0485 Keith Tunnel
+North Loriport, MO 34237",Maloneburgh,Utah,13.051825,85.758496,Infrastructure,True,2025-05-20T07:42:24
+ccab9b1f-614b-4950-b5eb-c05ed5a370e2,8a0a9a5b-97fe-47c2-b856-40dfcd3620a9,Port Rebecca Demolition Site,"500 Pearson Shores Apt. 750
+New Mary, OK 86700",New Lindamouth,Alaska,21.08981,83.133226,Infrastructure,True,2024-11-12T07:15:51
+8058987a-59d5-48ed-955b-52f9f30f5914,435422c3-08e5-4ecd-b663-9e664da0afaa,Derekchester Construction Site,"48797 Reilly Expressway
+South Sharonberg, AZ 69896",West Alejandroburgh,Utah,22.933685,81.85855,Construction,True,2025-06-03T14:37:33
+fa147dac-5631-4669-b9e0-c9a9086592f6,435422c3-08e5-4ecd-b663-9e664da0afaa,Guzmanville Demolition Site,"34189 Richard Ford
+Herreraside, OR 68628",Brianview,Oklahoma,23.340615,81.997018,Construction,True,2025-09-03T13:41:55
