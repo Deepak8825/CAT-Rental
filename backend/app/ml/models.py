@@ -401,6 +401,14 @@ class PredictiveMaintenanceModel:
         with open(os.path.join(path, "metrics.json"), "w") as f:
             json.dump(self.metrics, f)
         print(f"  ✓ Model saved to {path}")
+    
+    def load(self, path: str = None):
+        path = path or os.path.join(MODEL_DIR, "predictive_maintenance")
+        self.classifier = joblib.load(os.path.join(path, "classifier.joblib"))
+        self.regressor = joblib.load(os.path.join(path, "regressor.joblib"))
+        self.scaler = joblib.load(os.path.join(path, "scaler.joblib"))
+        self.feature_cols = joblib.load(os.path.join(path, "feature_cols.joblib"))
+        self.is_trained = True
 
 
 # ═══════════════════════════════════════════════════════════
@@ -548,6 +556,12 @@ class DynamicPricingEngine:
         joblib.dump(self.model, os.path.join(path, "model.joblib"))
         joblib.dump(self.scaler, os.path.join(path, "scaler.joblib"))
         print(f"  ✓ Model saved to {path}")
+    
+    def load(self, path: str = None):
+        path = path or os.path.join(MODEL_DIR, "dynamic_pricing")
+        self.model = joblib.load(os.path.join(path, "model.joblib"))
+        self.scaler = joblib.load(os.path.join(path, "scaler.joblib"))
+        self.is_trained = True
 
 
 # ═══════════════════════════════════════════════════════════
@@ -631,6 +645,12 @@ class AnomalyDetector:
         joblib.dump(self.model, os.path.join(path, "model.joblib"))
         joblib.dump(self.scaler, os.path.join(path, "scaler.joblib"))
         print(f"  ✓ Model saved to {path}")
+    
+    def load(self, path: str = None):
+        path = path or os.path.join(MODEL_DIR, "anomaly_detector")
+        self.model = joblib.load(os.path.join(path, "model.joblib"))
+        self.scaler = joblib.load(os.path.join(path, "scaler.joblib"))
+        self.is_trained = True
 
 
 # ═══════════════════════════════════════════════════════════

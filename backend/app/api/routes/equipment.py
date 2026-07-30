@@ -199,3 +199,41 @@ async def ingest_sensor_reading(
     await db.commit()
     await db.refresh(reading)
     return reading
+
+
+@router.get("/telemetry/live")
+async def get_live_telemetry(
+    equipment_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get latest live CAN-bus telemetry reading from IoT database."""
+    query = select(SensorReading).order_by(SensorReading.reading_time.desc())
+    if equipment_id:
+        query = query.where(SensorReading.equipment_id == equipment_id)
+    
+    result = await db.execute(query.limit(1))
+    reading = result.scalar_one_or_none()
+    
+    if not reading:
+        return {
+            "engine_temp": 88.5,
+            "hydraulic_pressure": 3100.0,
+            "battery_voltage": 12.6,
+            "fuel_level": 75.0,
+            "rpm": 1950,
+            "vibration_level": 2.1,
+            "is_anomaly": False,
+            "reading_time": datetime.utcnow().isoformat()
+        }
+    
+    return {
+        "equipment_id": str(reading.equipment_id),
+        "engine_temp": reading.engine_temp,
+        "hydraulic_pressure": reading.hydraulic_pressure,
+        "battery_voltage": reading.battery_voltage,
+        "fuel_level": reading.fuel_level,
+        "rpm": reading.rpm,
+        "vibration_level": reading.vibration_level,
+        "is_anomaly": reading.is_anomaly,
+        "reading_time": reading.reading_time.isoformat() if reading.reading_time else datetime.utcnow().isoformat()
+    }

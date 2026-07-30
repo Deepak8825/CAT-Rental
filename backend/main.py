@@ -12,7 +12,7 @@ import logging
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api.routes import equipment, rentals, analytics, auth, customer
+from app.api.routes import equipment, rentals, analytics, auth, customer, ai_copilot
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -101,6 +101,7 @@ app.include_router(customer.router, prefix=settings.API_PREFIX)
 app.include_router(equipment.router, prefix=settings.API_PREFIX)
 app.include_router(rentals.router, prefix=settings.API_PREFIX)
 app.include_router(analytics.router, prefix=settings.API_PREFIX)
+app.include_router(ai_copilot.router, prefix=settings.API_PREFIX)
 
 
 # Health check endpoint

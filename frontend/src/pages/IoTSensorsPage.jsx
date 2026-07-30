@@ -5,9 +5,24 @@
 import { useState, useEffect } from 'react'
 import { Radio, ThermometerSun, Gauge, Zap, Fuel, Activity, Cpu } from 'lucide-react'
 
+const API = 'http://localhost:8000/api/v1'
+
 export default function IoTSensorsPage() {
-  const [selectedMachine, setSelectedMachine] = useState('CAT 320 Excavator #142')
+  const [machines, setMachines] = useState([])
+  const [selectedMachine, setSelectedMachine] = useState('')
   const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    fetch(`${API}/equipment/?limit=20`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setMachines(data)
+          setSelectedMachine(data[0].id)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     const timer = setInterval(() => setTick(t => t + 1), 1500)
@@ -35,10 +50,13 @@ export default function IoTSensorsPage() {
               value={selectedMachine}
               onChange={(e) => setSelectedMachine(e.target.value)}
             >
-              <option value="CAT 320 Excavator #142">CAT 320 Excavator #142</option>
-              <option value="Komatsu PC200 #089">Komatsu PC200 #089</option>
-              <option value="Volvo EC220 #215">Volvo EC220 #215</option>
-              <option value="CAT 966 Loader #310">CAT 966 Loader #310</option>
+              {machines.length > 0 ? (
+                machines.map(m => (
+                  <option key={m.id} value={m.id}>{m.name} ({m.model})</option>
+                ))
+              ) : (
+                <option value="">CAT 320 Excavator #142</option>
+              )}
             </select>
           </div>
         </div>

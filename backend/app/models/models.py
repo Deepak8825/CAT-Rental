@@ -16,6 +16,10 @@ from app.core.database import Base
 import enum
 
 
+def EnumType(enum_cls):
+    return SQLEnum(enum_cls, values_callable=lambda x: [e.value for e in x])
+
+
 # ─── Enums ────────────────────────────────────────────────
 
 class EquipmentStatus(str, enum.Enum):
@@ -129,7 +133,7 @@ class Equipment(Base):
     subcategory = Column(String(100))
     serial_number = Column(String(100), unique=True, nullable=False)
     year_manufactured = Column(Integer)
-    status = Column(SQLEnum(EquipmentStatus), default=EquipmentStatus.AVAILABLE)
+    status = Column(EnumType(EquipmentStatus), default=EquipmentStatus.AVAILABLE)
     health_score = Column(Float, default=100.0)  # 0-100
     daily_rate = Column(Float, nullable=False)
     hourly_rate = Column(Float)
@@ -196,7 +200,7 @@ class Rental(Base):
     actual_return_date = Column(Date)
     daily_rate = Column(Float, nullable=False)
     total_cost = Column(Float)
-    status = Column(SQLEnum(RentalStatus), default=RentalStatus.PENDING)
+    status = Column(EnumType(RentalStatus), default=RentalStatus.PENDING)
     operator_name = Column(String(255))
     operator_certification = Column(String(100))
     contract_hash = Column(String(255))  # For blockchain integration
@@ -291,7 +295,7 @@ class MaintenanceRecord(Base):
     equipment_id = Column(UUID(as_uuid=True), ForeignKey("equipment.id"), nullable=False)
     scheduled_date = Column(Date, nullable=False)
     completed_date = Column(Date)
-    maintenance_type = Column(SQLEnum(MaintenanceType), default=MaintenanceType.SCHEDULED)
+    maintenance_type = Column(EnumType(MaintenanceType), default=MaintenanceType.SCHEDULED)
     description = Column(Text)
     parts_replaced = Column(JSON, default=[])
     cost = Column(Float, default=0.0)
@@ -316,7 +320,7 @@ class DamageReport(Base):
     post_scan_images = Column(JSON, default=[])  # S3 URLs
     ai_detected_damages = Column(JSON, default=[])  # {type, location, severity, confidence}
     estimated_repair_cost = Column(Float, default=0.0)
-    status = Column(SQLEnum(DamageStatus), default=DamageStatus.DETECTED)
+    status = Column(EnumType(DamageStatus), default=DamageStatus.DETECTED)
     reviewer_notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -339,7 +343,7 @@ class Invoice(Base):
     tax_amount = Column(Float, default=0.0)
     discount_amount = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
-    status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.DRAFT)
+    status = Column(EnumType(InvoiceStatus), default=InvoiceStatus.DRAFT)
     due_date = Column(Date)
     paid_date = Column(Date)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -355,7 +359,7 @@ class Event(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     equipment_id = Column(UUID(as_uuid=True), ForeignKey("equipment.id"))
     event_type = Column(String(100), nullable=False)  # geofence_breach, health_alert, etc.
-    severity = Column(SQLEnum(EventSeverity), default=EventSeverity.INFO)
+    severity = Column(EnumType(EventSeverity), default=EventSeverity.INFO)
     title = Column(String(255))
     description = Column(Text)
     metadata_json = Column(JSON, default={})
@@ -508,7 +512,7 @@ class Booking(Base):
     end_date = Column(Date)
 
     # Status & Tracking
-    status = Column(SQLEnum(BookingStatus), default=BookingStatus.REQUESTED)
+    status = Column(EnumType(BookingStatus), default=BookingStatus.REQUESTED)
     admin_notes = Column(Text)
     assigned_operator = Column(String(255))
     estimated_delivery = Column(DateTime)
@@ -571,9 +575,9 @@ class Payment(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     booking_id = Column(UUID(as_uuid=True), ForeignKey("bookings.id"), nullable=False)
     amount = Column(Float, nullable=False)
-    payment_type = Column(SQLEnum(PaymentType), nullable=False)
+    payment_type = Column(EnumType(PaymentType), nullable=False)
     method = Column(String(50), default="online")  # online, bank_transfer, cash
-    status = Column(SQLEnum(PaymentStatus), default=PaymentStatus.PENDING)
+    status = Column(EnumType(PaymentStatus), default=PaymentStatus.PENDING)
     transaction_ref = Column(String(255))
     receipt_url = Column(String(500))
     notes = Column(Text)
@@ -650,8 +654,8 @@ class SupportTicket(Base):
     booking_id = Column(UUID(as_uuid=True), ForeignKey("bookings.id"))
     subject = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
-    status = Column(SQLEnum(TicketStatus), default=TicketStatus.OPEN)
-    priority = Column(SQLEnum(TicketPriority), default=TicketPriority.MEDIUM)
+    status = Column(EnumType(TicketStatus), default=TicketStatus.OPEN)
+    priority = Column(EnumType(TicketPriority), default=TicketPriority.MEDIUM)
     admin_response = Column(Text)
     resolved_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
