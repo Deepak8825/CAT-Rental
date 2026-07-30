@@ -6,14 +6,13 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
-  LayoutDashboard, ShoppingCart, Brain, Search, FileText, MapPin,
+  LayoutDashboard, ShoppingCart, Search, FileText, MapPin,
   CreditCard, Receipt, LifeBuoy, Bell, User, Settings, LogOut
 } from 'lucide-react'
 
 // Customer Page Imports
 import CustomerDashboard from '../pages/customer/CustomerDashboard'
 import BookEquipmentPage from '../pages/customer/BookEquipmentPage'
-import AIRecommendationPage from '../pages/customer/AIRecommendationPage'
 import SearchEquipmentPage from '../pages/customer/SearchEquipmentPage'
 import MyRentalsPage from '../pages/customer/MyRentalsPage'
 import TrackEquipmentPage from '../pages/customer/TrackEquipmentPage'
@@ -33,7 +32,6 @@ const CustomerSidebar = ({ activePage, setActivePage }) => {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { section: 'Rental' },
     { id: 'book', label: 'Book Equipment', icon: ShoppingCart },
-    { id: 'ai-recommend', label: 'AI Recommendation', icon: Brain },
     { id: 'search', label: 'Search Equipment', icon: Search },
     { section: 'My Orders' },
     { id: 'rentals', label: 'My Rentals', icon: FileText, badge: null },
@@ -54,7 +52,7 @@ const CustomerSidebar = ({ activePage, setActivePage }) => {
       <div className="sidebar-logo">
         <div className="logo-icon" style={{ background: '#FFC500', color: '#000' }}>CAT</div>
         <div>
-          <h1>Caterpillar Dealer</h1>
+          <h1>Caterpillar</h1>
           <span>Customer Portal</span>
         </div>
       </div>
@@ -91,7 +89,6 @@ export default function CustomerLayout() {
   const pageTitle = {
     dashboard: 'Customer Dashboard',
     book: 'Book Equipment',
-    'ai-recommend': 'AI Recommendation',
     search: 'Search Equipment',
     rentals: 'My Rentals',
     track: 'Track Equipment',
@@ -107,7 +104,6 @@ export default function CustomerLayout() {
     switch (activePage) {
       case 'dashboard': return <CustomerDashboard onNavigate={setActivePage} />
       case 'book': return <BookEquipmentPage onNavigate={setActivePage} />
-      case 'ai-recommend': return <AIRecommendationPage />
       case 'search': return <SearchEquipmentPage onNavigate={setActivePage} />
       case 'rentals': return <MyRentalsPage onNavigate={setActivePage} />
       case 'track': return <TrackEquipmentPage />

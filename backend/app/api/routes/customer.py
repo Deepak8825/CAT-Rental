@@ -54,6 +54,31 @@ class BookingCreate(BaseModel):
     start_date: date
     end_date: Optional[date] = None
     accessories: Optional[list] = []
+    selected_equipment_id: Optional[UUID] = None  # Set when user picks from AI recommendations
+
+
+class RecommendationRequest(BaseModel):
+    """Request body for pre-booking AI recommendations."""
+    job_type: str
+    construction_type: Optional[str] = None
+    project_duration_days: int = Field(ge=1)
+    location: str
+    budget_per_day: Optional[float] = None
+    machine_preference: Optional[str] = None
+    terrain_type: Optional[str] = None
+    digging_depth_m: Optional[float] = None
+    payload_tons: Optional[float] = None
+
+
+class QuoteRequest(BaseModel):
+    """Request body for price quote preview."""
+    equipment_id: UUID
+    project_duration_days: int = Field(ge=1)
+    operator_required: bool = False
+    fuel_included: bool = False
+    delivery_required: bool = True
+    insurance_required: bool = True
+    terrain_type: Optional[str] = None
 
 
 class PaymentCreate(BaseModel):
@@ -202,6 +227,199 @@ async def search_equipment(
     ]
 
 
+# ─── Pre-Booking AI Recommendations ──────────────────────
+
+@router.post("/bookings/get-recommendations")
+async def get_prebooking_recommendations(
+    data: RecommendationRequest,
+    current_user: dict = Depends(require_role("customer")),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get AI equipment recommendations BEFORE creating a booking.
+    Called during the booking wizard so the customer can pick a machine."""
+    import math
+
+    # Job-category mapping
+    JOB_CATEGORIES = {
+        "excavation": ["Excavator"],
+        "loading": ["Loader", "Forklift"],
+        "grading": ["Bulldozer"],
+        "lifting": ["Crane"],
+        "hauling": ["Dump Truck"],
+        "compaction": ["Compactor"],
+        "power": ["Generator"],
+    }
+
+    target_cats = JOB_CATEGORIES.get(
+        data.job_type.lower(),
+        list(set(c for cats in JOB_CATEGORIES.values() for c in cats))
+    )
+
+    # Get available equipment
+    result = await db.execute(
+        select(Equipment).where(
+            and_(
+                Equipment.status == EquipmentStatus.AVAILABLE,
+                Equipment.category.in_(target_cats)
+            )
+        ).limit(20)
+    )
+    equipment = result.scalars().all()
+
+    recommendations = []
+    for eq in equipment:
+        score = 0.0
+        reasoning = []
+
+        # Health contribution (0-25)
+        health_score = eq.health_score * 0.25
+        score += health_score
+        reasoning.append(f"Equipment health: {eq.health_score}% ({'excellent' if eq.health_score >= 80 else 'good' if eq.health_score >= 60 else 'fair'})")
+
+        # Category match (0-25)
+        if eq.category in target_cats:
+            score += 25
+            reasoning.append(f"{eq.category} is optimal for {data.job_type} jobs")
+
+        # Load capacity match (0-20)
+        if data.payload_tons and eq.max_load_capacity:
+            if eq.max_load_capacity >= data.payload_tons:
+                ratio = data.payload_tons / eq.max_load_capacity
+                cap_score = ratio * 20
+                score += cap_score
+                reasoning.append(f"Load capacity {eq.max_load_capacity}t covers {data.payload_tons}t requirement ({ratio*100:.0f}% utilization)")
+            else:
+                reasoning.append(f"⚠ Load capacity {eq.max_load_capacity}t may be insufficient for {data.payload_tons}t")
+        else:
+            score += 10
+            reasoning.append("Load capacity adequate for general use")
+
+        # Budget match (0-15)
+        if data.budget_per_day and eq.daily_rate:
+            if eq.daily_rate <= data.budget_per_day:
+                score += 15
+                reasoning.append(f"Daily rate ₹{eq.daily_rate:,.0f} is within budget ₹{data.budget_per_day:,.0f}")
+            else:
+                score += 5
+                reasoning.append(f"Daily rate ₹{eq.daily_rate:,.0f} exceeds budget ₹{data.budget_per_day:,.0f}")
+        else:
+            score += 10
+
+        # Engine power for terrain (0-15)
+        if data.terrain_type:
+            terrain_power = {"rock": 300, "clay": 200, "sand": 150, "mixed": 250}
+            min_power = terrain_power.get(data.terrain_type.lower(), 200)
+            if eq.engine_power_hp and eq.engine_power_hp >= min_power:
+                score += 15
+                reasoning.append(f"{eq.engine_power_hp}HP engine suitable for {data.terrain_type} terrain")
+            else:
+                score += 5
+                reasoning.append(f"Engine power may need verification for {data.terrain_type} terrain")
+        else:
+            score += 10
+
+        score = min(100, score)
+        confidence = min(98, score * 0.95 + (eq.health_score * 0.05))
+        fuel_per_day = (eq.fuel_capacity or 400) * 0.08 * (1.2 if data.terrain_type == "rock" else 1.0)
+        productivity = score * 0.85
+        risk = max(5, 100 - eq.health_score)
+
+        recommendations.append({
+            "score": round(score, 1),
+            "equipment_id": str(eq.id),
+            "equipment_name": eq.name,
+            "equipment_model": eq.model,
+            "category": eq.category,
+            "daily_rate": eq.daily_rate,
+            "health_score": eq.health_score,
+            "engine_power_hp": eq.engine_power_hp,
+            "max_load_capacity": eq.max_load_capacity,
+            "weight_tons": eq.weight_tons,
+            "year_manufactured": eq.year_manufactured,
+            "fit_score": round(score, 1),
+            "confidence": round(confidence, 1),
+            "estimated_fuel_per_day": round(fuel_per_day, 1),
+            "expected_productivity": round(productivity, 1),
+            "risk_score": round(risk, 1),
+            "reasoning": reasoning,
+        })
+
+    # Sort by score, keep top 5
+    recommendations.sort(key=lambda x: x["score"], reverse=True)
+    top_recs = recommendations[:5]
+    if top_recs:
+        top_recs[0]["is_primary"] = True
+    for r in top_recs[1:]:
+        r["is_primary"] = False
+
+    return {"recommendations": top_recs}
+
+
+@router.post("/bookings/get-quote")
+async def get_prebooking_quote(
+    data: QuoteRequest,
+    current_user: dict = Depends(require_role("customer")),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get a dynamic price quote for a specific machine BEFORE booking.
+    Called when the customer selects a recommended machine."""
+    eq_result = await db.execute(select(Equipment).where(Equipment.id == data.equipment_id))
+    eq = eq_result.scalar_one_or_none()
+    if not eq:
+        raise HTTPException(404, "Equipment not found")
+
+    # Dynamic pricing calculation
+    base = eq.daily_rate * data.project_duration_days
+    demand_mult = 1.15 if datetime.now().month in [4, 5, 6, 7, 8, 9] else 0.95
+    health_mult = 0.85 + (eq.health_score / 100) * 0.15
+    seasonal_mult = demand_mult
+    transport = 5000 if data.delivery_required else 0
+    insurance = base * 0.05 if data.insurance_required else 0
+    operator = 2500 * data.project_duration_days if data.operator_required else 0
+    fuel_per_day = (eq.fuel_capacity or 400) * 0.08 * (1.2 if data.terrain_type == "rock" else 1.0)
+    fuel_est = fuel_per_day * data.project_duration_days * 95  # ₹95/L
+    subtotal = base * demand_mult * health_mult + transport + insurance + operator + (fuel_est if data.fuel_included else 0)
+    tax = subtotal * 0.18
+    discount = 0
+    discount_reason = None
+    if data.project_duration_days >= 30:
+        discount = subtotal * 0.05
+        discount_reason = "5% long-term rental discount (30+ days)"
+    elif data.project_duration_days >= 14:
+        discount = subtotal * 0.02
+        discount_reason = "2% multi-week rental discount (14+ days)"
+    total = subtotal + tax - discount
+
+    explanation = (
+        f"Base rate: ₹{eq.daily_rate:,.0f}/day × {data.project_duration_days} days = ₹{base:,.0f}. "
+        f"Demand factor: ×{demand_mult:.2f} (seasonal). "
+        f"Health factor: ×{health_mult:.2f} ({eq.health_score}% health). "
+        f"Transport: ₹{transport:,.0f}. Insurance: ₹{insurance:,.0f}. "
+        f"Operator: ₹{operator:,.0f}. GST 18%: ₹{tax:,.0f}."
+    )
+
+    return {
+        "equipment_id": str(eq.id),
+        "equipment_name": eq.name,
+        "equipment_model": eq.model,
+        "base_price": round(base, 2),
+        "demand_multiplier": demand_mult,
+        "health_multiplier": round(health_mult, 2),
+        "seasonal_multiplier": seasonal_mult,
+        "transport_cost": transport,
+        "insurance_cost": round(insurance, 2),
+        "operator_cost": operator,
+        "fuel_estimate": round(fuel_est, 2) if data.fuel_included else 0,
+        "tax_amount": round(tax, 2),
+        "discount_amount": round(discount, 2),
+        "discount_reason": discount_reason,
+        "total_price": round(total, 2),
+        "price_explanation": explanation,
+        "daily_rate": eq.daily_rate,
+        "duration_days": data.project_duration_days,
+    }
+
+
 # ─── Bookings ────────────────────────────────────────────
 
 @router.post("/bookings")
@@ -210,11 +428,15 @@ async def create_booking(
     current_user: dict = Depends(require_role("customer")),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new rental booking request."""
+    """Create a new rental booking request.
+    If selected_equipment_id is provided (from AI recommendation flow),
+    the booking is created with that equipment and a quotation is generated directly.
+    """
     uid = UUID(current_user["user_id"])
 
     booking = Booking(
         customer_id=uid,
+        equipment_id=data.selected_equipment_id,
         job_type=data.job_type,
         construction_type=data.construction_type,
         project_duration_days=data.project_duration_days,
@@ -257,13 +479,17 @@ async def create_booking(
     db.add(notif)
     await db.commit()
 
-    # Generate AI recommendations
-    await _generate_recommendations(booking, db)
+    # If the user already selected equipment from recommendations, generate quotation directly
+    if data.selected_equipment_id:
+        await _generate_quotation_for_selected(booking, data.selected_equipment_id, db)
+    else:
+        # Fallback: generate AI recommendations (legacy path)
+        await _generate_recommendations(booking, db)
 
     return {
         "booking_id": str(booking.id),
-        "status": "requested",
-        "message": "Booking request created. AI is analyzing your requirements.",
+        "status": booking.status.value if hasattr(booking.status, 'value') else str(booking.status),
+        "message": "Booking confirmed with your selected equipment and pricing.",
     }
 
 
@@ -687,6 +913,71 @@ async def list_tickets(
         }
         for t in tickets
     ]
+
+
+# ─── Quotation for Pre-selected Equipment ────────────────
+
+async def _generate_quotation_for_selected(booking: Booking, equipment_id: UUID, db: AsyncSession):
+    """Generate quotation when user already picked equipment from the AI recommendation step."""
+    eq_result = await db.execute(select(Equipment).where(Equipment.id == equipment_id))
+    eq = eq_result.scalar_one_or_none()
+    if not eq:
+        return
+
+    # Dynamic pricing
+    base = eq.daily_rate * booking.project_duration_days
+    demand_mult = 1.15 if datetime.now().month in [4, 5, 6, 7, 8, 9] else 0.95
+    health_mult = 0.85 + (eq.health_score / 100) * 0.15
+    seasonal_mult = demand_mult
+    transport = 5000 if booking.delivery_required else 0
+    insurance = base * 0.05 if booking.insurance_required else 0
+    operator = 2500 * booking.project_duration_days if booking.operator_required else 0
+    fuel_per_day = (eq.fuel_capacity or 400) * 0.08 * (1.2 if booking.terrain_type == "rock" else 1.0)
+    fuel_est = fuel_per_day * booking.project_duration_days * 95
+    subtotal = base * demand_mult * health_mult + transport + insurance + operator + (fuel_est if booking.fuel_included else 0)
+    tax = subtotal * 0.18
+    discount = 0
+    if booking.project_duration_days >= 30:
+        discount = subtotal * 0.05
+    elif booking.project_duration_days >= 14:
+        discount = subtotal * 0.02
+    total = subtotal + tax - discount
+
+    explanation = (
+        f"Base rate: ₹{eq.daily_rate:,.0f}/day × {booking.project_duration_days} days = ₹{base:,.0f}. "
+        f"Demand factor: ×{demand_mult:.2f} (seasonal). "
+        f"Health factor: ×{health_mult:.2f} ({eq.health_score}% health). "
+        f"Transport: ₹{transport:,.0f}. Insurance: ₹{insurance:,.0f}. "
+        f"Operator: ₹{operator:,.0f}. GST 18%: ₹{tax:,.0f}."
+    )
+
+    quotation = Quotation(
+        booking_id=booking.id,
+        base_price=base,
+        demand_multiplier=demand_mult,
+        health_multiplier=health_mult,
+        seasonal_multiplier=seasonal_mult,
+        transport_cost=transport,
+        insurance_cost=insurance,
+        operator_cost=operator,
+        fuel_estimate=fuel_est if booking.fuel_included else 0,
+        tax_amount=round(tax, 2),
+        discount_amount=round(discount, 2),
+        total_price=round(total, 2),
+        price_explanation=explanation,
+        valid_until=datetime.utcnow() + timedelta(days=7),
+    )
+    db.add(quotation)
+
+    booking.status = BookingStatus.QUOTED
+    tracking = BookingTracking(
+        booking_id=booking.id,
+        status="quoted",
+        title="AI Analysis Complete — Quotation Generated",
+        description=f"Selected: {eq.name}. Total: ₹{total:,.0f} for {booking.project_duration_days} days.",
+    )
+    db.add(tracking)
+    await db.commit()
 
 
 # ─── AI Recommendation Helper ────────────────────────────
