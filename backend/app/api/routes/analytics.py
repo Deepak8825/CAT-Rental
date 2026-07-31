@@ -34,9 +34,9 @@ async def admin_dashboard(db: AsyncSession = Depends(get_db)):
         select(func.count(Equipment.id)).where(Equipment.status == EquipmentStatus.AVAILABLE)
     )
     
-    # Rental stats
+    # Rental stats (active + pending customer bookings)
     active_rentals = await db.execute(
-        select(func.count(Rental.id)).where(Rental.status == RentalStatus.ACTIVE)
+        select(func.count(Rental.id)).where(Rental.status.in_([RentalStatus.ACTIVE, RentalStatus.PENDING]))
     )
     
     # Customer stats

@@ -4,12 +4,13 @@ Rental API routes — booking lifecycle + analytics.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, case, extract
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, date, timedelta
 
 from app.core.database import get_db
-from app.models.models import Rental, RentalStatus, Equipment, EquipmentStatus, Customer, DailyLog
+from app.models.models import Rental, RentalStatus, Equipment, EquipmentStatus, Customer, DailyLog, Booking, BookingStatus, Notification, BookingTracking
 from app.models.schemas import RentalCreate, RentalResponse
 
 router = APIRouter(prefix="/rentals", tags=["Rentals"])
@@ -21,12 +22,15 @@ async def list_rentals(
     customer_id: Optional[UUID] = None,
     equipment_id: Optional[UUID] = None,
     start_after: Optional[date] = None,
-    limit: int = Query(50, le=200),
+    limit: int = Query(100, le=500),
     offset: int = 0,
     db: AsyncSession = Depends(get_db)
 ):
-    """List rentals with filtering."""
-    query = select(Rental)
+    """List rentals with filtering and eager loaded customer/equipment details."""
+    query = select(Rental).options(
+        selectinload(Rental.customer),
+        selectinload(Rental.equipment)
+    )
     
     if status:
         query = query.where(Rental.status == status)
@@ -37,9 +41,28 @@ async def list_rentals(
     if start_after:
         query = query.where(Rental.start_date >= start_after)
     
-    query = query.order_by(Rental.created_at.desc()).offset(offset).limit(limit)
+    # Priority ordering: PENDING first (1), ACTIVE second (2), others last (3)
+    status_order = case(
+        (Rental.status == RentalStatus.PENDING, 1),
+        (Rental.status == RentalStatus.ACTIVE, 2),
+        else_=3
+    )
+    query = query.order_by(status_order, Rental.created_at.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
-    return result.scalars().all()
+    rentals = result.scalars().all()
+
+    response_list = []
+    for r in rentals:
+        item = RentalResponse.model_validate(r)
+        if r.customer:
+            item.customer_name = r.customer.name
+            item.customer_company = r.customer.company
+        if r.equipment:
+            item.equipment_name = r.equipment.name
+            item.equipment_model = r.equipment.model
+        response_list.append(item)
+
+    return response_list
 
 
 @router.post("/", response_model=RentalResponse)
@@ -75,19 +98,96 @@ async def create_rental(data: RentalCreate, db: AsyncSession = Depends(get_db)):
     return rental
 
 
-@router.patch("/{rental_id}/checkout")
-async def checkout_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Activate a pending rental (check-out)."""
+@router.patch("/{rental_id}/confirm")
+async def confirm_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Dealer approves & confirms customer booking."""
     result = await db.execute(select(Rental).where(Rental.id == rental_id))
     rental = result.scalar_one_or_none()
     if not rental:
         raise HTTPException(404, "Rental not found")
-    if rental.status != RentalStatus.PENDING:
-        raise HTTPException(400, f"Cannot checkout: rental is {rental.status.value}")
+    
+    eq_name = "Equipment"
+    if rental.equipment_id:
+        eq_res = await db.execute(select(Equipment).where(Equipment.id == rental.equipment_id))
+        eq = eq_res.scalar_one_or_none()
+        if eq:
+            eq_name = eq.name
+
+    # Sync linked booking → set to CONFIRMED and notify customer
+    booking_res = await db.execute(select(Booking).where(Booking.rental_id == rental_id))
+    booking = booking_res.scalar_one_or_none()
+    if booking:
+        booking.status = BookingStatus.CONFIRMED
+
+        # Notify the customer that the dealer confirmed
+        notif = Notification(
+            user_id=booking.customer_id,
+            user_type="customer",
+            title="Booking Confirmed by Caterpillar Dealer",
+            message=f"Your booking #{str(booking.id)[:8]} for '{eq_name}' has been reviewed and confirmed by Caterpillar Dealer.",
+            category="booking",
+        )
+        db.add(notif)
+
+        # Add tracking timeline entry
+        tracking = BookingTracking(
+            booking_id=booking.id,
+            status="confirmed",
+            title="Confirmed by Caterpillar Dealer",
+            description=f"Caterpillar Dealer has reviewed and confirmed your booking request for {eq_name}.",
+        )
+        db.add(tracking)
+
+    await db.commit()
+    return {"message": "Booking confirmed by Caterpillar Dealer", "status": "confirmed"}
+
+
+@router.patch("/{rental_id}/checkout")
+async def checkout_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Activate rental and dispatch equipment (check-out)."""
+    result = await db.execute(select(Rental).where(Rental.id == rental_id))
+    rental = result.scalar_one_or_none()
+    if not rental:
+        raise HTTPException(404, "Rental not found")
     
     rental.status = RentalStatus.ACTIVE
+    
+    # Update equipment status
+    eq_name = "Equipment"
+    if rental.equipment_id:
+        eq_res = await db.execute(select(Equipment).where(Equipment.id == rental.equipment_id))
+        eq = eq_res.scalar_one_or_none()
+        if eq:
+            eq.status = EquipmentStatus.RENTED
+            eq_name = eq.name
+
+    # Sync linked booking → set to DISPATCHED and notify customer
+    booking_res = await db.execute(select(Booking).where(Booking.rental_id == rental_id))
+    booking = booking_res.scalar_one_or_none()
+    if booking:
+        booking.status = BookingStatus.DISPATCHED
+
+        # Notify the customer that the dealer dispatched equipment
+        notif = Notification(
+            user_id=booking.customer_id,
+            user_type="customer",
+            title="Equipment Dispatched by Caterpillar Dealer",
+            message=f"Your booking #{str(booking.id)[:8]} for '{eq_name}' has been dispatched by Caterpillar Dealer to {booking.location}.",
+            category="booking",
+        )
+        db.add(notif)
+
+        # Add tracking timeline entry
+        tracking = BookingTracking(
+            booking_id=booking.id,
+            status="dispatched",
+            title="Equipment Dispatched",
+            description=f"Caterpillar Dealer has dispatched {eq_name} to your location: {booking.location}.",
+        )
+        db.add(tracking)
+
     await db.commit()
-    return {"message": "Rental checked out successfully", "status": "active"}
+    return {"message": "Rental dispatched and customer notified", "status": "dispatched"}
 
 
 @router.patch("/{rental_id}/return")
@@ -114,7 +214,13 @@ async def return_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
     equipment = equip_result.scalar_one_or_none()
     if equipment:
         equipment.status = EquipmentStatus.AVAILABLE
-    
+
+    # Sync linked booking if exists
+    booking_res = await db.execute(select(Booking).where(Booking.rental_id == rental_id))
+    booking = booking_res.scalar_one_or_none()
+    if booking:
+        booking.status = BookingStatus.COMPLETED
+
     await db.commit()
     return {
         "message": "Rental returned successfully",

@@ -16,7 +16,7 @@ from app.models.models import (
     Customer, CustomerProfile, Equipment, EquipmentStatus,
     Booking, BookingStatus, Quotation, Payment, PaymentStatus, PaymentType,
     BookingTracking, Notification, MachineRecommendation, SupportTicket,
-    TicketStatus, TicketPriority
+    TicketStatus, TicketPriority, Rental, RentalStatus, Event, EventSeverity
 )
 
 router = APIRouter(prefix="/customer", tags=["Customer Portal"])
@@ -649,18 +649,51 @@ async def accept_quotation(
 
     booking.quotation.is_accepted = True
     booking.quotation.accepted_at = datetime.utcnow()
-    booking.status = BookingStatus.CONFIRMED
+    # Keep status as Awaiting Dealer Approval (QUOTED / REQUESTED), NOT confirmed yet
+    booking.status = BookingStatus.QUOTED
+
+    # Ensure Rental stays PENDING so dealer must confirm/approve it on Dealer Portal
+    if booking.rental_id:
+        rental_res = await db.execute(select(Rental).where(Rental.id == booking.rental_id))
+        rental = rental_res.scalar_one_or_none()
+        if rental:
+            rental.status = RentalStatus.PENDING
+            rental.total_cost = booking.quotation.total_price
+
+    if booking.equipment_id:
+        eq_res = await db.execute(select(Equipment).where(Equipment.id == booking.equipment_id))
+        eq = eq_res.scalar_one_or_none()
+        if eq:
+            dealer_event = Event(
+                equipment_id=eq.id,
+                event_type="quote_accepted",
+                severity=EventSeverity.INFO,
+                title=f"Quotation Accepted: {eq.name}",
+                description=f"Customer accepted quotation of ₹{booking.quotation.total_price:,.0f} for booking #{str(booking.id)[:8]}. Awaiting Dealer Confirmation.",
+                metadata_json={"booking_id": str(booking.id)}
+            )
+            db.add(dealer_event)
 
     tracking = BookingTracking(
         booking_id=booking.id,
-        status="confirmed",
-        title="Quotation Accepted",
-        description=f"Customer accepted quotation of ₹{booking.quotation.total_price:,.0f}. Booking confirmed.",
+        status="quoted",
+        title="Quotation Accepted by Customer",
+        description=f"You accepted quotation of ₹{booking.quotation.total_price:,.0f}. Awaiting Caterpillar Dealer confirmation.",
     )
     db.add(tracking)
+
+    # Send notification to customer
+    notif = Notification(
+        user_id=booking.customer_id,
+        user_type="customer",
+        title="Quotation Accepted — Pending Dealer Approval",
+        message=f"You accepted the quote for booking #{str(booking.id)[:8]}. Caterpillar Dealer will review and confirm your booking shortly.",
+        category="booking",
+    )
+    db.add(notif)
     await db.commit()
 
-    return {"message": "Quotation accepted. Booking confirmed.", "status": "confirmed"}
+    return {"message": "Quotation accepted. Awaiting Caterpillar Dealer confirmation.", "status": "quoted"}
 
 
 @router.post("/bookings/{booking_id}/return-request")
@@ -977,6 +1010,35 @@ async def _generate_quotation_for_selected(booking: Booking, equipment_id: UUID,
         description=f"Selected: {eq.name}. Total: ₹{total:,.0f} for {booking.project_duration_days} days.",
     )
     db.add(tracking)
+
+    # Sync to Rental model so it reflects on Dealer Portal
+    rental = Rental(
+        customer_id=booking.customer_id,
+        equipment_id=eq.id,
+        start_date=booking.start_date,
+        end_date=booking.end_date or (booking.start_date + timedelta(days=booking.project_duration_days)),
+        daily_rate=eq.daily_rate,
+        total_cost=round(total, 2),
+        status=RentalStatus.PENDING,
+        notes=f"Customer Booking #{str(booking.id)[:8]} — Job: {booking.job_type} at {booking.location}",
+    )
+    db.add(rental)
+    await db.flush()
+
+    booking.rental_id = rental.id
+    eq.status = EquipmentStatus.RENTED
+
+    # Dealer alert event
+    dealer_event = Event(
+        equipment_id=eq.id,
+        event_type="new_booking",
+        severity=EventSeverity.INFO,
+        title=f"New Customer Booking #{str(booking.id)[:8]}",
+        description=f"Equipment '{eq.name}' booked for {booking.project_duration_days} days at {booking.location}. Total: ₹{round(total, 2):,.2f}.",
+        metadata_json={"booking_id": str(booking.id), "rental_id": str(rental.id)}
+    )
+    db.add(dealer_event)
+
     await db.commit()
 
 
@@ -1151,5 +1213,31 @@ async def _generate_recommendations(booking: Booking, db: AsyncSession):
                 description=f"Recommended: {best_eq.name}. Total: ₹{total:,.0f} for {booking.project_duration_days} days.",
             )
             db.add(tracking)
+
+            rental = Rental(
+                customer_id=booking.customer_id,
+                equipment_id=best_eq.id,
+                start_date=booking.start_date,
+                end_date=booking.end_date or (booking.start_date + timedelta(days=booking.project_duration_days)),
+                daily_rate=best_eq.daily_rate,
+                total_cost=round(total, 2),
+                status=RentalStatus.PENDING,
+                notes=f"Customer Booking #{str(booking.id)[:8]} — Job: {booking.job_type} at {booking.location}",
+            )
+            db.add(rental)
+            await db.flush()
+
+            booking.rental_id = rental.id
+            best_eq.status = EquipmentStatus.RENTED
+
+            dealer_event = Event(
+                equipment_id=best_eq.id,
+                event_type="new_booking",
+                severity=EventSeverity.INFO,
+                title=f"New Customer Booking #{str(booking.id)[:8]}",
+                description=f"Recommended equipment '{best_eq.name}' booked for {booking.project_duration_days} days at {booking.location}. Total: ₹{round(total, 2):,.2f}.",
+                metadata_json={"booking_id": str(booking.id), "rental_id": str(rental.id)}
+            )
+            db.add(dealer_event)
 
     await db.commit()

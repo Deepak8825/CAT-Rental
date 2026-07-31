@@ -111,10 +111,10 @@ const AdminSidebar = ({ activePage, setActivePage }) => {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <div className="logo-icon">SR</div>
+        <div className="logo-icon">CAT</div>
         <div>
           <h1>Caterpillar Dealer</h1>
-          <span>Fleet Administration</span>
+          <span>Dealer Administration</span>
         </div>
       </div>
       <nav className="sidebar-nav">
@@ -195,7 +195,7 @@ export default function AdminLayout() {
     }
   }
 
-  const pageTitle = { dashboard:'Admin Dashboard', fleet:'Fleet Overview', rentals:'Rentals', customers:'Customers', analytics:'Analytics', ai:'AI Intelligence', maintenance:'Maintenance', alerts:'Alerts', iot:'IoT Sensors', settings:'Settings' }
+  const pageTitle = { dashboard:'Caterpillar Dealer Dashboard', fleet:'Fleet Overview', rentals:'Rentals', customers:'Customers', analytics:'Analytics', ai:'AI Intelligence', maintenance:'Maintenance', alerts:'Alerts', iot:'IoT Sensors', settings:'Settings' }
 
   return (
     <div className="app-layout">

@@ -52,7 +52,7 @@ const CustomerSidebar = ({ activePage, setActivePage }) => {
       <div className="sidebar-logo">
         <div className="logo-icon" style={{ background: '#FFC500', color: '#000' }}>CAT</div>
         <div>
-          <h1>Caterpillar</h1>
+          <h1>Caterpillar Dealer</h1>
           <span>Customer Portal</span>
         </div>
       </div>
