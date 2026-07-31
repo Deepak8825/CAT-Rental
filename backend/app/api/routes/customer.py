@@ -54,7 +54,8 @@ class BookingCreate(BaseModel):
     start_date: date
     end_date: Optional[date] = None
     accessories: Optional[list] = []
-    selected_equipment_id: Optional[UUID] = None  # Set when user picks from AI recommendations
+    selected_equipment_id: Optional[UUID] = None  # Single equipment
+    selected_equipment_ids: Optional[List[UUID]] = None  # Multiple equipment items in single order
 
 
 class RecommendationRequest(BaseModel):
@@ -479,17 +480,19 @@ async def create_booking(
     db.add(notif)
     await db.commit()
 
-    # If the user already selected equipment from recommendations, generate quotation directly
-    if data.selected_equipment_id:
+    # Check if multiple equipment items were selected in single order
+    if data.selected_equipment_ids and len(data.selected_equipment_ids) > 0:
+        await _generate_quotation_for_multiple(booking, data.selected_equipment_ids, db)
+    elif data.selected_equipment_id:
         await _generate_quotation_for_selected(booking, data.selected_equipment_id, db)
     else:
-        # Fallback: generate AI recommendations (legacy path)
+        # Fallback: generate AI recommendations
         await _generate_recommendations(booking, db)
 
     return {
         "booking_id": str(booking.id),
         "status": booking.status.value if hasattr(booking.status, 'value') else str(booking.status),
-        "message": "Booking confirmed with your selected equipment and pricing.",
+        "message": "Booking confirmed with your selected equipment order and pricing.",
     }
 
 
@@ -1038,6 +1041,113 @@ async def _generate_quotation_for_selected(booking: Booking, equipment_id: UUID,
         metadata_json={"booking_id": str(booking.id), "rental_id": str(rental.id)}
     )
     db.add(dealer_event)
+
+    await db.commit()
+
+
+async def _generate_quotation_for_multiple(booking: Booking, equipment_ids: List[UUID], db: AsyncSession):
+    """Generate quotation when user picks MULTIPLE equipment items with quantities in a single booking order."""
+    if not equipment_ids:
+        return
+
+    unique_ids = list(set(equipment_ids))
+    eq_res = await db.execute(select(Equipment).where(Equipment.id.in_(unique_ids)))
+    eq_map = {eq.id: eq for eq in eq_res.scalars().all()}
+    if not eq_map:
+        return
+
+    # Expand full unit list preserving quantities
+    requested_units = [eq_map[eq_id] for eq_id in equipment_ids if eq_id in eq_map]
+    total_units_count = len(requested_units)
+    if total_units_count == 0:
+        return
+
+    total_daily_rate = sum(eq.daily_rate for eq in requested_units)
+    avg_health = sum(eq.health_score for eq in requested_units) / total_units_count
+
+    base = total_daily_rate * booking.project_duration_days
+    demand_mult = 1.15 if datetime.now().month in [4, 5, 6, 7, 8, 9] else 0.95
+    health_mult = 0.85 + (avg_health / 100) * 0.15
+    seasonal_mult = demand_mult
+    transport = (5000 * total_units_count) if booking.delivery_required else 0
+    insurance = base * 0.05 if booking.insurance_required else 0
+    operator = (2500 * total_units_count * booking.project_duration_days) if booking.operator_required else 0
+    
+    total_fuel_per_day = sum((eq.fuel_capacity or 400) * 0.08 * (1.2 if booking.terrain_type == "rock" else 1.0) for eq in requested_units)
+    fuel_est = total_fuel_per_day * booking.project_duration_days * 95
+    
+    subtotal = base * demand_mult * health_mult + transport + insurance + operator + (fuel_est if booking.fuel_included else 0)
+    tax = subtotal * 0.18
+    discount = 0
+    if booking.project_duration_days >= 30:
+        discount = subtotal * 0.08
+    elif booking.project_duration_days >= 14:
+        discount = subtotal * 0.04
+    total = subtotal + tax - discount
+
+    names_str = ", ".join([f"{eq.name}" for eq in requested_units])
+    explanation = (
+        f"Multi-Machine Order ({total_units_count} total units). "
+        f"Combined daily rate: ₹{total_daily_rate:,.0f}/day × {booking.project_duration_days} days = ₹{base:,.0f}. "
+        f"Transport ({total_units_count} units): ₹{transport:,.0f}. Insurance: ₹{insurance:,.0f}. GST 18%: ₹{tax:,.0f}."
+    )
+
+    quotation = Quotation(
+        booking_id=booking.id,
+        base_price=base,
+        demand_multiplier=demand_mult,
+        health_multiplier=health_mult,
+        seasonal_multiplier=seasonal_mult,
+        transport_cost=transport,
+        insurance_cost=insurance,
+        operator_cost=operator,
+        fuel_estimate=fuel_est if booking.fuel_included else 0,
+        tax_amount=round(tax, 2),
+        discount_amount=round(discount, 2),
+        total_price=round(total, 2),
+        price_explanation=explanation,
+        valid_until=datetime.utcnow() + timedelta(days=7),
+    )
+    db.add(quotation)
+
+    booking.status = BookingStatus.QUOTED
+    booking.equipment_id = requested_units[0].id
+
+    tracking = BookingTracking(
+        booking_id=booking.id,
+        status="quoted",
+        title="Multi-Equipment Booking Received",
+        description=f"Selected {total_units_count} machine unit(s) ({names_str}). Total: ₹{total:,.0f} for {booking.project_duration_days} days.",
+    )
+    db.add(tracking)
+
+    # Sync a Rental record for EACH equipment unit requested
+    for unit_idx, eq in enumerate(requested_units):
+        eq_cost = (eq.daily_rate / total_daily_rate) * total if total_daily_rate > 0 else (total / total_units_count)
+        rental = Rental(
+            customer_id=booking.customer_id,
+            equipment_id=eq.id,
+            start_date=booking.start_date,
+            end_date=booking.end_date or (booking.start_date + timedelta(days=booking.project_duration_days)),
+            daily_rate=eq.daily_rate,
+            total_cost=round(eq_cost, 2),
+            status=RentalStatus.PENDING,
+            notes=f"Customer Multi-Order #{str(booking.id)[:8]} (Unit {unit_idx + 1} of {total_units_count}: {eq.name}) — Job: {booking.job_type} at {booking.location}",
+        )
+        db.add(rental)
+        await db.flush()
+        if unit_idx == 0:
+            booking.rental_id = rental.id
+
+        dealer_event = Event(
+            equipment_id=eq.id,
+            event_type="new_booking",
+            severity=EventSeverity.INFO,
+            title=f"New Multi-Machine Order #{str(booking.id)[:8]} (Unit {unit_idx + 1}/{total_units_count})",
+            description=f"Equipment '{eq.name}' included in {total_units_count}-unit order at {booking.location}.",
+            metadata_json={"booking_id": str(booking.id), "rental_id": str(rental.id)}
+        )
+        db.add(dealer_event)
 
     await db.commit()
 

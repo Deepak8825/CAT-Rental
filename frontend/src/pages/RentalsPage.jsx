@@ -50,6 +50,23 @@ export default function RentalsPage() {
     }
   }, [successToast])
 
+  const handleConfirmAndDispatch = async (rental) => {
+    setActionLoading(rental.id)
+    try {
+      const res = await fetch(`${API}/rentals/${rental.id}/confirm-and-dispatch`, { method: 'PATCH' })
+      if (res.ok) {
+        setSuccessToast({
+          title: '🚚 Booking Confirmed & Dispatched!',
+          message: `Order for ${rental.customer_name || 'Customer'} (${rental.equipment_name}) approved, confirmed, and dispatched by Caterpillar Dealer.`,
+        })
+        await fetchData()
+      }
+    } catch (err) {
+      console.error('Confirm & Dispatch error:', err)
+    }
+    setActionLoading(null)
+  }
+
   const handleConfirmBooking = async (rental) => {
     setActionLoading(rental.id)
     try {
@@ -373,55 +390,60 @@ export default function RentalsPage() {
               ) : (
                 filteredRentals.map((r) => {
                   const statusLower = String(r.status).toLowerCase()
+                  const displayId = r.order_id ? `#${r.order_id}` : `#${String(r.id).slice(0, 8)}`
                   return (
                     <tr key={r.id}>
-                      <td style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#2E2725' }}>
-                        {String(r.id).slice(0, 8)}...
+                      <td style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 800, color: '#FFC500', background: '#2E2725', padding: '6px 10px', borderRadius: 4, display: 'inline-block', marginTop: 10 }}>
+                        {displayId}
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600, color: '#2E2725' }}>{r.customer_name || 'Customer'}</div>
+                        <div style={{ fontWeight: 700, color: '#2E2725', fontSize: 13 }}>{r.customer_name || 'Customer'}</div>
                         {r.customer_company && <div style={{ fontSize: 11, color: '#666' }}>{r.customer_company}</div>}
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600, color: '#2E2725' }}>{r.equipment_name || 'CAT Equipment'}</div>
-                        {r.equipment_model && <div style={{ fontSize: 11, color: '#666' }}>{r.equipment_model}</div>}
+                        <div style={{ fontWeight: 700, color: '#2E2725', fontSize: 13 }}>{r.equipment_name || 'CAT Equipment'}</div>
+                        <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                          {r.equipment_model && <span>{r.equipment_model}</span>}
+                          {r.total_units > 1 && (
+                            <span style={{ marginLeft: 6, background: '#FFF9E6', border: '1px solid #FFC500', color: '#2E2725', padding: '1px 6px', borderRadius: 4, fontWeight: 800, fontSize: 10 }}>
+                              {r.total_units} Units Order
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td>
-                        <div style={{ fontSize: 12 }}>{r.start_date}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{r.start_date}</div>
                         <div style={{ fontSize: 11, color: '#666' }}>to {r.end_date || 'Ongoing'}</div>
                       </td>
-                      <td>₹{r.daily_rate?.toLocaleString()}</td>
-                      <td style={{ fontWeight: 700, color: '#2E2725' }}>
+                      <td style={{ fontWeight: 600 }}>₹{r.daily_rate?.toLocaleString()}/day</td>
+                      <td style={{ fontWeight: 800, color: '#059669', fontSize: 14 }}>
                         ₹{r.total_cost?.toLocaleString()}
                       </td>
                       <td>{getStatusBadge(r.status)}</td>
                       <td>
-                        {statusLower === 'pending' && (
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button
-                              className="btn btn-primary btn-sm"
-                              style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4, background: '#2563EB', borderColor: '#2563EB' }}
-                              onClick={() => handleConfirmBooking(r)}
-                              disabled={actionLoading === r.id}
-                            >
-                              {actionLoading === r.id ? 'Processing...' : (
-                                <><Check size={13} /> Confirm Booking</>
-                              )}
-                            </button>
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
-                              onClick={() => showDispatchModal(r)}
-                              disabled={actionLoading === r.id}
-                            >
-                              <Truck size={12} /> Dispatch
-                            </button>
-                          </div>
+                        {['pending', 'quoted'].includes(statusLower) && (
+                          <button
+                            className="btn btn-primary btn-sm"
+                            style={{
+                              fontSize: 11, padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 6,
+                              background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                              borderColor: '#16a34a', color: '#FFF', fontWeight: 800, borderRadius: 6,
+                              boxShadow: '0 2px 8px rgba(22,163,74,0.25)', cursor: 'pointer',
+                            }}
+                            onClick={() => handleConfirmAndDispatch(r)}
+                            disabled={actionLoading === r.id}
+                          >
+                            {actionLoading === r.id ? (
+                              <><RefreshCw size={13} className="animate-spin" /> Processing...</>
+                            ) : (
+                              <><Check size={13} /><Truck size={13} /> Confirm & Dispatch Booking</>
+                            )}
+                          </button>
                         )}
-                        {statusLower === 'active' && (
+                        {['active', 'confirmed', 'dispatched'].includes(statusLower) && (
                           <button
                             className="btn btn-secondary btn-sm"
-                            style={{ fontSize: 11, padding: '4px 10px' }}
+                            style={{ fontSize: 11, padding: '6px 12px' }}
                             onClick={() => handleReturn(r.id)}
                             disabled={actionLoading === r.id}
                           >
@@ -429,7 +451,7 @@ export default function RentalsPage() {
                           </button>
                         )}
                         {['completed', 'cancelled'].includes(statusLower) && (
-                          <span style={{ fontSize: 11, color: '#999' }}>—</span>
+                          <span style={{ fontSize: 11, color: '#999', fontWeight: 600 }}>✓ Completed</span>
                         )}
                       </td>
                     </tr>

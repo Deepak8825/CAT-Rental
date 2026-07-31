@@ -16,7 +16,7 @@ from app.models.schemas import RentalCreate, RentalResponse
 router = APIRouter(prefix="/rentals", tags=["Rentals"])
 
 
-@router.get("/", response_model=List[RentalResponse])
+@router.get("/")
 async def list_rentals(
     status: Optional[str] = None,
     customer_id: Optional[UUID] = None,
@@ -26,42 +26,90 @@ async def list_rentals(
     offset: int = 0,
     db: AsyncSession = Depends(get_db)
 ):
-    """List rentals with filtering and eager loaded customer/equipment details."""
+    """List customer orders grouped into unified single rows per order."""
     query = select(Rental).options(
         selectinload(Rental.customer),
         selectinload(Rental.equipment)
     )
     
-    if status:
-        query = query.where(Rental.status == status)
+    if status and status.upper() != 'ALL':
+        query = query.where(Rental.status == status.lower())
     if customer_id:
         query = query.where(Rental.customer_id == customer_id)
     if equipment_id:
         query = query.where(Rental.equipment_id == equipment_id)
     if start_after:
         query = query.where(Rental.start_date >= start_after)
-    
-    # Priority ordering: PENDING first (1), ACTIVE second (2), others last (3)
-    status_order = case(
-        (Rental.status == RentalStatus.PENDING, 1),
-        (Rental.status == RentalStatus.ACTIVE, 2),
-        else_=3
-    )
-    query = query.order_by(status_order, Rental.created_at.desc()).offset(offset).limit(limit)
+        
+    query = query.order_by(Rental.created_at.desc()).offset(offset).limit(limit)
     result = await db.execute(query)
     rentals = result.scalars().all()
 
-    response_list = []
+    # Group rentals by order
+    orders_map = {}
     for r in rentals:
-        item = RentalResponse.model_validate(r)
-        if r.customer:
-            item.customer_name = r.customer.name
-            item.customer_company = r.customer.company
-        if r.equipment:
-            item.equipment_name = r.equipment.name
-            item.equipment_model = r.equipment.model
-        response_list.append(item)
+        group_key = str(r.id)
+        if r.notes and "Multi-Order #" in r.notes:
+            try:
+                group_key = r.notes.split("Multi-Order #")[1].split(" ")[0]
+            except Exception:
+                pass
+        
+        if group_key not in orders_map:
+            orders_map[group_key] = {
+                "id": str(r.id),
+                "order_key": group_key,
+                "customer_name": r.customer.name if r.customer else "Customer",
+                "customer_company": r.customer.company if (r.customer and r.customer.company) else (r.customer.email if r.customer else ""),
+                "rentals": [],
+                "units": [],
+                "status": r.status.value if hasattr(r.status, 'value') else str(r.status),
+                "start_date": r.start_date,
+                "end_date": r.end_date,
+                "created_at": r.created_at,
+            }
+        orders_map[group_key]["rentals"].append(r)
+        eq_name = r.equipment.name if r.equipment else "Equipment"
+        eq_model = r.equipment.model if r.equipment else ""
+        orders_map[group_key]["units"].append({"name": eq_name, "model": eq_model, "rate": r.daily_rate or 0, "cost": r.total_cost or 0})
 
+    response_list = []
+    for g_key, o in orders_map.items():
+        name_counts = {}
+        for u in o["units"]:
+            name_counts[u["name"]] = name_counts.get(u["name"], 0) + 1
+            
+        eq_summary_parts = [f"{count}x {name}" for name, count in name_counts.items()]
+        total_units = len(o["units"])
+        eq_summary = ", ".join(eq_summary_parts) + (f" ({total_units} Units)" if total_units > 1 else "")
+        
+        models_str = ", ".join(list(set(u["model"] for u in o["units"] if u["model"])))
+        total_daily_rate = sum(u["rate"] for u in o["units"])
+        total_cost = sum(u["cost"] for u in o["units"])
+
+        response_list.append({
+            "id": o["id"],
+            "order_id": g_key[:8],
+            "customer_name": o["customer_name"],
+            "customer_company": o["customer_company"],
+            "equipment_name": eq_summary,
+            "equipment_model": models_str,
+            "start_date": str(o["start_date"]),
+            "end_date": str(o["end_date"]) if o["end_date"] else "Ongoing",
+            "daily_rate": round(total_daily_rate, 2),
+            "total_cost": round(total_cost, 2),
+            "status": o["status"],
+            "total_units": total_units,
+            "notes": o["rentals"][0].notes if o["rentals"] else "",
+        })
+
+    def status_rank(st):
+        s = str(st).lower()
+        if s == 'pending': return 1
+        if s in ['active', 'confirmed', 'dispatched']: return 2
+        return 3
+
+    response_list.sort(key=lambda x: status_rank(x["status"]))
     return response_list
 
 
@@ -100,11 +148,13 @@ async def create_rental(data: RentalCreate, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/{rental_id}/confirm")
 async def confirm_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Dealer approves & confirms customer booking."""
+    """Dealer approves & confirms customer booking (single or multi-unit order)."""
     result = await db.execute(select(Rental).where(Rental.id == rental_id))
     rental = result.scalar_one_or_none()
     if not rental:
         raise HTTPException(404, "Rental not found")
+    
+    rental.status = RentalStatus.ACTIVE
     
     eq_name = "Equipment"
     if rental.equipment_id:
@@ -113,9 +163,31 @@ async def confirm_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
         if eq:
             eq_name = eq.name
 
-    # Sync linked booking → set to CONFIRMED and notify customer
+    # Sync linked booking
     booking_res = await db.execute(select(Booking).where(Booking.rental_id == rental_id))
     booking = booking_res.scalar_one_or_none()
+    
+    if not booking and rental.notes and "Multi-Order #" in rental.notes:
+        try:
+            prefix = rental.notes.split("Multi-Order #")[1].split(" ")[0]
+            all_b = await db.execute(select(Booking).where(Booking.customer_id == rental.customer_id))
+            for b in all_b.scalars().all():
+                if str(b.id).startswith(prefix):
+                    booking = b
+                    break
+        except Exception:
+            pass
+
+    if rental.notes and "Multi-Order #" in rental.notes:
+        try:
+            prefix = rental.notes.split("Multi-Order #")[1].split(" ")[0]
+            all_rentals = await db.execute(select(Rental).where(Rental.customer_id == rental.customer_id))
+            for r in all_rentals.scalars().all():
+                if r.notes and f"Multi-Order #{prefix}" in r.notes:
+                    r.status = RentalStatus.ACTIVE
+        except Exception:
+            pass
+
     if booking:
         booking.status = BookingStatus.CONFIRMED
 
@@ -124,7 +196,7 @@ async def confirm_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
             user_id=booking.customer_id,
             user_type="customer",
             title="Booking Confirmed by Caterpillar Dealer",
-            message=f"Your booking #{str(booking.id)[:8]} for '{eq_name}' has been reviewed and confirmed by Caterpillar Dealer.",
+            message=f"Your order #{str(booking.id)[:8]} ({eq_name}) has been reviewed and confirmed by Caterpillar Dealer.",
             category="booking",
         )
         db.add(notif)
@@ -134,7 +206,7 @@ async def confirm_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
             booking_id=booking.id,
             status="confirmed",
             title="Confirmed by Caterpillar Dealer",
-            description=f"Caterpillar Dealer has reviewed and confirmed your booking request for {eq_name}.",
+            description=f"Caterpillar Dealer has reviewed and confirmed your booking order for {eq_name}.",
         )
         db.add(tracking)
 
@@ -161,18 +233,46 @@ async def checkout_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
             eq.status = EquipmentStatus.RENTED
             eq_name = eq.name
 
-    # Sync linked booking → set to DISPATCHED and notify customer
+    # Sync linked booking
     booking_res = await db.execute(select(Booking).where(Booking.rental_id == rental_id))
     booking = booking_res.scalar_one_or_none()
+    
+    if not booking and rental.notes and "Multi-Order #" in rental.notes:
+        try:
+            prefix = rental.notes.split("Multi-Order #")[1].split(" ")[0]
+            all_b = await db.execute(select(Booking).where(Booking.customer_id == rental.customer_id))
+            for b in all_b.scalars().all():
+                if str(b.id).startswith(prefix):
+                    booking = b
+                    break
+        except Exception:
+            pass
+
+    # Update all sibling rentals linked to this multi-order to ACTIVE and set machine status to RENTED
+    if rental.notes and "Multi-Order #" in rental.notes:
+        try:
+            prefix = rental.notes.split("Multi-Order #")[1].split(" ")[0]
+            all_rentals = await db.execute(select(Rental).where(Rental.customer_id == rental.customer_id))
+            for r in all_rentals.scalars().all():
+                if r.notes and f"Multi-Order #{prefix}" in r.notes:
+                    r.status = RentalStatus.ACTIVE
+                    if r.equipment_id:
+                        req_res = await db.execute(select(Equipment).where(Equipment.id == r.equipment_id))
+                        req_unit = req_res.scalar_one_or_none()
+                        if req_unit:
+                            req_unit.status = EquipmentStatus.RENTED
+        except Exception:
+            pass
+
     if booking:
         booking.status = BookingStatus.DISPATCHED
 
-        # Notify the customer that the dealer dispatched equipment
+        # Notify customer that dealer dispatched equipment
         notif = Notification(
             user_id=booking.customer_id,
             user_type="customer",
             title="Equipment Dispatched by Caterpillar Dealer",
-            message=f"Your booking #{str(booking.id)[:8]} for '{eq_name}' has been dispatched by Caterpillar Dealer to {booking.location}.",
+            message=f"Your booking order #{str(booking.id)[:8]} ({eq_name}) has been dispatched by Caterpillar Dealer to {booking.location}.",
             category="booking",
         )
         db.add(notif)
@@ -181,8 +281,8 @@ async def checkout_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
         tracking = BookingTracking(
             booking_id=booking.id,
             status="dispatched",
-            title="Equipment Dispatched",
-            description=f"Caterpillar Dealer has dispatched {eq_name} to your location: {booking.location}.",
+            title="Approved & Dispatched by Caterpillar Dealer",
+            description=f"Caterpillar Dealer has dispatched {eq_name} units to your site: {booking.location}.",
         )
         db.add(tracking)
 
@@ -190,9 +290,84 @@ async def checkout_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
     return {"message": "Rental dispatched and customer notified", "status": "dispatched"}
 
 
+@router.patch("/{rental_id}/confirm-and-dispatch")
+async def confirm_and_dispatch_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Single-click action: Dealer confirms booking AND dispatches equipment to customer in one step."""
+    result = await db.execute(select(Rental).where(Rental.id == rental_id))
+    rental = result.scalar_one_or_none()
+    if not rental:
+        raise HTTPException(404, "Rental not found")
+    
+    rental.status = RentalStatus.ACTIVE
+    
+    eq_name = "Equipment"
+    if rental.equipment_id:
+        eq_res = await db.execute(select(Equipment).where(Equipment.id == rental.equipment_id))
+        eq = eq_res.scalar_one_or_none()
+        if eq:
+            eq.status = EquipmentStatus.RENTED
+            eq_name = eq.name
+
+    # Sync linked booking
+    booking_res = await db.execute(select(Booking).where(Booking.rental_id == rental_id))
+    booking = booking_res.scalar_one_or_none()
+    
+    if not booking and rental.notes and "Multi-Order #" in rental.notes:
+        try:
+            prefix = rental.notes.split("Multi-Order #")[1].split(" ")[0]
+            all_b = await db.execute(select(Booking).where(Booking.customer_id == rental.customer_id))
+            for b in all_b.scalars().all():
+                if str(b.id).startswith(prefix):
+                    booking = b
+                    break
+        except Exception:
+            pass
+
+    # Update all sibling rentals linked to this multi-order to ACTIVE and set machine status to RENTED
+    if rental.notes and "Multi-Order #" in rental.notes:
+        try:
+            prefix = rental.notes.split("Multi-Order #")[1].split(" ")[0]
+            all_rentals = await db.execute(select(Rental).where(Rental.customer_id == rental.customer_id))
+            for r in all_rentals.scalars().all():
+                if r.notes and f"Multi-Order #{prefix}" in r.notes:
+                    r.status = RentalStatus.ACTIVE
+                    if r.equipment_id:
+                        req_res = await db.execute(select(Equipment).where(Equipment.id == r.equipment_id))
+                        req_unit = req_res.scalar_one_or_none()
+                        if req_unit:
+                            req_unit.status = EquipmentStatus.RENTED
+        except Exception:
+            pass
+
+    if booking:
+        booking.status = BookingStatus.DISPATCHED
+
+        # Notify customer that dealer approved & dispatched equipment
+        notif = Notification(
+            user_id=booking.customer_id,
+            user_type="customer",
+            title="Booking Confirmed & Dispatched by Caterpillar Dealer",
+            message=f"Your booking order #{str(booking.id)[:8]} ({eq_name}) has been approved, confirmed, and dispatched by Caterpillar Dealer to {booking.location}.",
+            category="booking",
+        )
+        db.add(notif)
+
+        # Add tracking timeline entry
+        tracking = BookingTracking(
+            booking_id=booking.id,
+            status="dispatched",
+            title="Approved & Dispatched by Caterpillar Dealer",
+            description=f"Caterpillar Dealer has confirmed and dispatched {eq_name} units to your site: {booking.location}.",
+        )
+        db.add(tracking)
+
+    await db.commit()
+    return {"message": "Booking confirmed and dispatched to customer", "status": "dispatched"}
+
+
 @router.patch("/{rental_id}/return")
 async def return_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Complete a rental (check-in / return)."""
+    """Complete a rental (check-in / return). Syncs completion back to customer."""
     result = await db.execute(select(Rental).where(Rental.id == rental_id))
     rental = result.scalar_one_or_none()
     if not rental:
@@ -208,24 +383,73 @@ async def return_rental(rental_id: UUID, db: AsyncSession = Depends(get_db)):
     rental.total_cost = rental.daily_rate * max(1, actual_duration)
     
     # Free up equipment
-    equip_result = await db.execute(
-        select(Equipment).where(Equipment.id == rental.equipment_id)
-    )
-    equipment = equip_result.scalar_one_or_none()
-    if equipment:
-        equipment.status = EquipmentStatus.AVAILABLE
+    eq_name = "Equipment"
+    if rental.equipment_id:
+        equip_result = await db.execute(select(Equipment).where(Equipment.id == rental.equipment_id))
+        equipment = equip_result.scalar_one_or_none()
+        if equipment:
+            equipment.status = EquipmentStatus.AVAILABLE
+            eq_name = equipment.name
 
-    # Sync linked booking if exists
+    # Sync linked booking
     booking_res = await db.execute(select(Booking).where(Booking.rental_id == rental_id))
     booking = booking_res.scalar_one_or_none()
+
+    if not booking and rental.notes and "Multi-Order #" in rental.notes:
+        try:
+            prefix = rental.notes.split("Multi-Order #")[1].split(" ")[0]
+            all_b = await db.execute(select(Booking).where(Booking.customer_id == rental.customer_id))
+            for b in all_b.scalars().all():
+                if str(b.id).startswith(prefix):
+                    booking = b
+                    break
+        except Exception:
+            pass
+
     if booking:
         booking.status = BookingStatus.COMPLETED
 
+        # Complete sibling rentals if multi-order
+        if rental.notes and "Multi-Order #" in rental.notes:
+            try:
+                prefix = rental.notes.split("Multi-Order #")[1].split(" ")[0]
+                all_rentals = await db.execute(select(Rental).where(Rental.customer_id == rental.customer_id))
+                for r in all_rentals.scalars().all():
+                    if r.notes and f"Multi-Order #{prefix}" in r.notes:
+                        r.status = RentalStatus.COMPLETED
+                        if r.equipment_id:
+                            req_res = await db.execute(select(Equipment).where(Equipment.id == r.equipment_id))
+                            req_unit = req_res.scalar_one_or_none()
+                            if req_unit:
+                                req_unit.status = EquipmentStatus.AVAILABLE
+            except Exception:
+                pass
+
+        # Notify customer
+        notif = Notification(
+            user_id=booking.customer_id,
+            user_type="customer",
+            title="Rental Completed & Equipment Returned",
+            message=f"Your rental order #{str(booking.id)[:8]} ({eq_name}) has been marked completed by Caterpillar Dealer.",
+            category="booking",
+        )
+        db.add(notif)
+
+        # Add tracking entry
+        tracking = BookingTracking(
+            booking_id=booking.id,
+            status="completed",
+            title="Rental Order Completed",
+            description=f"Equipment {eq_name} checked-in and rental completed by Caterpillar Dealer.",
+        )
+        db.add(tracking)
+
     await db.commit()
     return {
-        "message": "Rental returned successfully",
+        "message": "Rental returned and marked completed",
         "actual_duration_days": actual_duration,
         "total_cost": rental.total_cost,
+        "status": "completed",
     }
 
 
