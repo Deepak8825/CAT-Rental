@@ -155,9 +155,14 @@ class RentalResponse(RentalBase):
     status: RentalStatusEnum
     carbon_footprint_kg: float
     created_at: datetime
+    customer_name: Optional[str] = None
+    customer_company: Optional[str] = None
+    equipment_name: Optional[str] = None
+    equipment_model: Optional[str] = None
 
     class Config:
         from_attributes = True
+
 
 
 # ─── Sensor Reading Schemas ──────────────────────────────

@@ -3,7 +3,7 @@
  */
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { Package, FileText, CreditCard, Clock, ShoppingCart, ArrowRight, Brain, MapPin, Activity } from 'lucide-react'
+import { Package, FileText, CreditCard, Clock, ShoppingCart, ArrowRight, MapPin, Activity } from 'lucide-react'
 
 const API = 'http://localhost:8000/api/v1'
 
@@ -144,9 +144,9 @@ export default function CustomerDashboard({ onNavigate }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
           {[
             { icon: ShoppingCart, label: 'Book Equipment', page: 'book', color: '#FFC500' },
-            { icon: Brain, label: 'AI Recommendation', page: 'ai-recommend', color: '#8b5cf6' },
+            { icon: FileText, label: 'My Rentals', page: 'rentals', color: '#8b5cf6' },
             { icon: MapPin, label: 'Track Delivery', page: 'track', color: '#16a34a' },
-            { icon: FileText, label: 'View Invoices', page: 'invoices', color: '#3b82f6' },
+            { icon: CreditCard, label: 'View Invoices', page: 'invoices', color: '#3b82f6' },
           ].map((action, i) => {
             const Icon = action.icon
             return (

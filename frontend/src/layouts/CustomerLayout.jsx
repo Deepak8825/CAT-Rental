@@ -13,7 +13,6 @@ import {
 // Customer Page Imports
 import CustomerDashboard from '../pages/customer/CustomerDashboard'
 import BookEquipmentPage from '../pages/customer/BookEquipmentPage'
-import AIRecommendationPage from '../pages/customer/AIRecommendationPage'
 import CustomerAIAssistant from '../pages/customer/CustomerAIAssistant'
 import SearchEquipmentPage from '../pages/customer/SearchEquipmentPage'
 import MyRentalsPage from '../pages/customer/MyRentalsPage'
@@ -34,7 +33,6 @@ const CustomerSidebar = ({ activePage, setActivePage }) => {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { section: 'AI Assistant' },
     { id: 'ai-assistant', label: 'AI Rental Assistant', icon: Bot, badge: 'AI' },
-    { id: 'ai-recommend', label: 'AI Recommendation', icon: Brain },
     { section: 'Rental' },
     { id: 'book', label: 'Book Equipment', icon: ShoppingCart },
     { id: 'search', label: 'Search Equipment', icon: Search },
@@ -104,7 +102,6 @@ export default function CustomerLayout() {
     dashboard: 'Customer Dashboard',
     'ai-assistant': 'AI Rental Assistant',
     book: 'Book Equipment',
-    'ai-recommend': 'AI Recommendation',
     search: 'Search Equipment',
     rentals: 'My Rentals',
     track: 'Track Equipment',
@@ -121,7 +118,6 @@ export default function CustomerLayout() {
       case 'dashboard': return <CustomerDashboard onNavigate={setActivePage} />
       case 'ai-assistant': return <CustomerAIAssistant />
       case 'book': return <BookEquipmentPage onNavigate={setActivePage} />
-      case 'ai-recommend': return <AIRecommendationPage />
       case 'search': return <SearchEquipmentPage onNavigate={setActivePage} />
       case 'rentals': return <MyRentalsPage onNavigate={setActivePage} />
       case 'track': return <TrackEquipmentPage />

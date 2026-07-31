@@ -48,8 +48,8 @@ async def admin_dashboard(
         equip_avail_q = equip_avail_q.where(Dealer.region == region)
     equip_available = await db.execute(select(func.count()).select_from(equip_avail_q.subquery()))
 
-    # 2. Active Rentals Query
-    active_q = select(Rental.id).join(Equipment, Rental.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id).where(Rental.status == RentalStatus.ACTIVE)
+    # 2. Active Rentals Query (active + pending customer bookings)
+    active_q = select(Rental.id).join(Equipment, Rental.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id).where(Rental.status.in_([RentalStatus.ACTIVE, RentalStatus.PENDING]))
     if category:
         active_q = active_q.where(Equipment.category == category)
     if region:
