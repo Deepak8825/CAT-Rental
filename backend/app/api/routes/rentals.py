@@ -262,14 +262,20 @@ async def rental_analytics(db: AsyncSession = Depends(get_db)):
     )
     
     # Monthly trend (last 12 months)
+    from app.core.config import settings
+    if settings.DATABASE_URL.startswith("sqlite"):
+        month_expr = func.strftime("%Y-%m", Rental.start_date)
+    else:
+        month_expr = func.date_trunc("month", Rental.start_date)
+
     monthly_query = select(
-        func.date_trunc("month", Rental.start_date).label("month"),
+        month_expr.label("month"),
         func.count(Rental.id).label("count"),
         func.coalesce(func.sum(Rental.total_cost), 0).label("revenue"),
     ).where(
         Rental.start_date >= today - timedelta(days=365)
     ).group_by(
-        func.date_trunc("month", Rental.start_date)
+        month_expr
     ).order_by("month")
     
     monthly_result = await db.execute(monthly_query)

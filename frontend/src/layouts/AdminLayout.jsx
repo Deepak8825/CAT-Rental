@@ -17,6 +17,7 @@ import RentalsPage from '../pages/RentalsPage'
 import CustomersPage from '../pages/CustomersPage'
 import AnalyticsPage from '../pages/AnalyticsPage'
 import AIInsightsPage from '../pages/AIInsightsPage'
+import AdminAICopilot from '../pages/AdminAICopilot'
 import MaintenancePage from '../pages/MaintenancePage'
 import AlertsPage from '../pages/AlertsPage'
 import IoTSensorsPage from '../pages/IoTSensorsPage'
@@ -94,8 +95,9 @@ const AdminSidebar = ({ activePage, setActivePage }) => {
     { id: 'rentals', label: 'Rentals', icon: FileText, badge: 12 },
     { id: 'customers', label: 'Customers', icon: Users },
     { section: 'Intelligence' },
+    { id: 'ai-copilot', label: 'Fleet AI Copilot', icon: Brain, badge: 'AI' },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'ai', label: 'AI Insights', icon: Brain, badge: 4 },
+    { id: 'ai', label: 'AI ML Models', icon: Brain, badge: 4 },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench, badge: 7 },
     { section: 'System' },
     { id: 'alerts', label: 'Alerts', icon: Bell, badge: 3 },
@@ -125,7 +127,16 @@ const AdminSidebar = ({ activePage, setActivePage }) => {
             <a key={item.id} className={`nav-item ${activePage === item.id ? 'active' : ''}`} onClick={() => setActivePage(item.id)}>
               <Icon className="nav-icon" />
               <span>{item.label}</span>
-              {item.badge && <span className="nav-badge">{item.badge}</span>}
+              {item.badge && (
+                <span className="nav-badge" style={{
+                  background: item.id === 'ai-copilot' ? '#FFC500' : undefined,
+                  color: item.id === 'ai-copilot' ? '#000000' : undefined,
+                  fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4
+                }}>
+                  {item.id === 'ai-copilot' && <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#16a34a' }} />}
+                  {item.badge}
+                </span>
+              )}
             </a>
           )
         })}
@@ -185,6 +196,7 @@ export default function AdminLayout() {
       case 'fleet': return <FleetPage />
       case 'rentals': return <RentalsPage />
       case 'customers': return <CustomersPage />
+      case 'ai-copilot': return <AdminAICopilot />
       case 'analytics': return <AnalyticsPage />
       case 'ai': return <AIInsightsPage />
       case 'maintenance': return <MaintenancePage />
@@ -195,7 +207,7 @@ export default function AdminLayout() {
     }
   }
 
-  const pageTitle = { dashboard:'Caterpillar Dealer Dashboard', fleet:'Fleet Overview', rentals:'Rentals', customers:'Customers', analytics:'Analytics', ai:'AI Intelligence', maintenance:'Maintenance', alerts:'Alerts', iot:'IoT Sensors', settings:'Settings' }
+  const pageTitle = { dashboard:'Caterpillar Dealer Dashboard', fleet:'Fleet Overview', rentals:'Rentals', customers:'Customers', 'ai-copilot':'Fleet AI Copilot', analytics:'Analytics', ai:'AI Intelligence', maintenance:'Maintenance', alerts:'Alerts', iot:'IoT Sensors', settings:'Settings' }
 
   return (
     <div className="app-layout">

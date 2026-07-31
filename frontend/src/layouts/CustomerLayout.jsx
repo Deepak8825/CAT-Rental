@@ -6,13 +6,15 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
-  LayoutDashboard, ShoppingCart, Search, FileText, MapPin,
-  CreditCard, Receipt, LifeBuoy, Bell, User, Settings, LogOut
+  LayoutDashboard, ShoppingCart, Brain, Search, FileText, MapPin,
+  CreditCard, Receipt, LifeBuoy, Bell, User, Settings, LogOut, Bot
 } from 'lucide-react'
 
 // Customer Page Imports
 import CustomerDashboard from '../pages/customer/CustomerDashboard'
 import BookEquipmentPage from '../pages/customer/BookEquipmentPage'
+import AIRecommendationPage from '../pages/customer/AIRecommendationPage'
+import CustomerAIAssistant from '../pages/customer/CustomerAIAssistant'
 import SearchEquipmentPage from '../pages/customer/SearchEquipmentPage'
 import MyRentalsPage from '../pages/customer/MyRentalsPage'
 import TrackEquipmentPage from '../pages/customer/TrackEquipmentPage'
@@ -30,6 +32,9 @@ const CustomerSidebar = ({ activePage, setActivePage }) => {
   const navItems = [
     { section: 'Overview' },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { section: 'AI Assistant' },
+    { id: 'ai-assistant', label: 'AI Rental Assistant', icon: Bot, badge: 'AI' },
+    { id: 'ai-recommend', label: 'AI Recommendation', icon: Brain },
     { section: 'Rental' },
     { id: 'book', label: 'Book Equipment', icon: ShoppingCart },
     { id: 'search', label: 'Search Equipment', icon: Search },
@@ -64,7 +69,16 @@ const CustomerSidebar = ({ activePage, setActivePage }) => {
             <a key={item.id} className={`nav-item ${activePage === item.id ? 'active' : ''}`} onClick={() => setActivePage(item.id)}>
               <Icon className="nav-icon" />
               <span>{item.label}</span>
-              {item.badge && <span className="nav-badge">{item.badge}</span>}
+              {item.badge && (
+                <span className="nav-badge" style={{
+                  background: item.id === 'ai-assistant' ? '#FFC500' : undefined,
+                  color: item.id === 'ai-assistant' ? '#000000' : undefined,
+                  fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4
+                }}>
+                  {item.id === 'ai-assistant' && <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#16a34a' }} />}
+                  {item.badge}
+                </span>
+              )}
             </a>
           )
         })}
@@ -88,6 +102,7 @@ export default function CustomerLayout() {
 
   const pageTitle = {
     dashboard: 'Customer Dashboard',
+    'ai-assistant': 'AI Rental Assistant',
     book: 'Book Equipment',
     search: 'Search Equipment',
     rentals: 'My Rentals',
@@ -103,6 +118,7 @@ export default function CustomerLayout() {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard': return <CustomerDashboard onNavigate={setActivePage} />
+      case 'ai-assistant': return <CustomerAIAssistant />
       case 'book': return <BookEquipmentPage onNavigate={setActivePage} />
       case 'search': return <SearchEquipmentPage onNavigate={setActivePage} />
       case 'rentals': return <MyRentalsPage onNavigate={setActivePage} />
