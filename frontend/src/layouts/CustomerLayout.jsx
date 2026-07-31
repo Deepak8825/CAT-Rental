@@ -13,7 +13,6 @@ import {
 // Customer Page Imports
 import CustomerDashboard from '../pages/customer/CustomerDashboard'
 import BookEquipmentPage from '../pages/customer/BookEquipmentPage'
-import AIRecommendationPage from '../pages/customer/AIRecommendationPage'
 import CustomerAIAssistant from '../pages/customer/CustomerAIAssistant'
 import SearchEquipmentPage from '../pages/customer/SearchEquipmentPage'
 import MyRentalsPage from '../pages/customer/MyRentalsPage'
@@ -34,7 +33,6 @@ const CustomerSidebar = ({ activePage, setActivePage }) => {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { section: 'AI Assistant' },
     { id: 'ai-assistant', label: 'AI Rental Assistant', icon: Bot, badge: 'AI' },
-    { id: 'ai-recommend', label: 'AI Recommendation', icon: Brain },
     { section: 'Rental' },
     { id: 'book', label: 'Book Equipment', icon: ShoppingCart },
     { id: 'search', label: 'Search Equipment', icon: Search },

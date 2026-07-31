@@ -67,7 +67,6 @@ async def admin_dashboard(
     # 4. Revenue Query
     rev_this_q = select(func.coalesce(func.sum(Rental.total_cost), 0)).join(Equipment, Rental.equipment_id == Equipment.id).join(Dealer, Equipment.dealer_id == Dealer.id).where(
         and_(Rental.start_date >= this_month, Rental.status != RentalStatus.CANCELLED)
->>>>>>> 40be5fb62bf187c6d3a1dde7151e1ede5dace923
     )
     if category:
         rev_this_q = rev_this_q.where(Equipment.category == category)
